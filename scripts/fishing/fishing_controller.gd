@@ -55,7 +55,7 @@ func _try_cast() -> void:
 
 func _compute_wait() -> void:
 	var base := randf_range(2.0, 6.0)
-	var bait := DB.item_by_id(Game.bait_id).get("bite", 1.0)
+	var bait: float = float(DB.item_by_id(Game.bait_id).get("bite", 1.0))
 	if Game.weather == "rain":
 		base *= 0.8
 	if Game.is_night() and DB.item_by_id(Game.bait_id).get("night", false):
@@ -113,8 +113,8 @@ func _start_minigame() -> void:
 	var fish := DB.fish_by_id(chosen)
 	var diff := float(fish.get("diff", 2))
 	var tackle := DB.item_by_id(Game.tackle_id)
-	var bar_mult := tackle.get("bar", 1.0)
-	var tres_mult := tackle.get("treasure", 1.0)
+	var bar_mult: float = float(tackle.get("bar", 1.0))
+	var tres_mult: float = float(tackle.get("treasure", 1.0))
 	var mini = MiniS.new()
 	add_child(mini)
 	mini.start(diff, bar_mult, tackle.get("grip", 1.0), tres_mult)
@@ -174,7 +174,7 @@ func _on_result(success: bool, treasure: bool, fish_id: String, fish: Dictionary
 		Sfx.play("splash")
 	else:
 		var size := randi_range(fish["size"][0], fish["size"][1])
-		var price := fish["price"]
+		var price: int = int(fish["price"])
 		Game.record_catch(fish_id, size)
 		Game.add_item(fish_id)
 		Sfx.play("catch")

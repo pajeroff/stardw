@@ -81,7 +81,7 @@ func _build() -> void:
 			art.texture = Art.tex(id)
 			art.modulate = Color(0.15, 0.15, 0.2)  # silhouette
 		box.add_child(art)
-		var f := DB.fish[id]
+		var f: Dictionary = DB.fish[id]
 		var nm := U.label(f["name"] if disc else "???", 13, DB.rarity_color(f["rarity"]))
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		nm.clip_text = true

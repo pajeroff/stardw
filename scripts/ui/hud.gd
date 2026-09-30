@@ -182,7 +182,7 @@ func _select(i: int) -> void:
 	selected = i
 	if i < Game.inventory.size():
 		var it = Game.inventory[i]
-		var typ := DB.item_by_id(it["id"]).get("type", "")
+		var typ: String = str(DB.item_by_id(it["id"]).get("type", ""))
 		if typ == "food":
 			if Game.remove_item(it["id"], 1):
 				Game.restore_energy(DB.item_by_id(it["id"]).get("energy", 20))

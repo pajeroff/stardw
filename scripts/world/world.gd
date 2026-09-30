@@ -196,7 +196,7 @@ func _process(delta: float) -> void:
 				s["node"].position = IsoS.cell_to_local(t)
 	for s in _sparkles:
 		s["t"] += delta
-		var k := s["t"] / 1.2
+		var k: float = float(s["t"]) / 1.2
 		s["node"].modulate.a = maxf(0.0, sin(k * PI)) * 0.8
 
 func pick_water_cell(type: String = "") -> Vector2i:

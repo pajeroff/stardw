@@ -41,7 +41,7 @@ func rod_power() -> int:
 	return DB.item_by_id(rod_id).get("power", 2)
 
 func luck() -> int:
-	var l := DB.item_by_id(rod_id).get("luck", 0)
+	var l: int = int(DB.item_by_id(rod_id).get("luck", 0))
 	if lure_id != "":
 		l += 1
 	return l

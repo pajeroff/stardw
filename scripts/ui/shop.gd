@@ -124,7 +124,7 @@ func _fill_sell(list: VBoxContainer) -> void:
 	var any := false
 	for slot in Game.inventory:
 		var id: String = slot["id"]
-		var typ := DB.item_by_id(id).get("type", "")
+		var typ: String = str(DB.item_by_id(id).get("type", ""))
 		var is_fish := DB.fish.has(id)
 		if not (is_fish or typ in ["junk", "treasure", "resource"]):
 			continue
