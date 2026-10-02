@@ -23,14 +23,14 @@ const DIRECTIONS: Array[String] = [
 ]
 
 const DIRECTION_VECTORS: Dictionary = {
-	"down": Vector2(0, 1),
-	"down_right": Vector2(1, 0.5).normalized(),
-	"right": Vector2(1, 0),
-	"up_right": Vector2(1, -0.5).normalized(),
-	"up": Vector2(0, -1),
-	"up_left": Vector2(-1, -0.5).normalized(),
-	"left": Vector2(-1, 0),
-	"down_left": Vector2(-1, 0.5).normalized(),
+	"down": Vector2(0.0, 1.0),
+	"down_right": Vector2(0.89442719, 0.4472136),
+	"right": Vector2(1.0, 0.0),
+	"up_right": Vector2(0.89442719, -0.4472136),
+	"up": Vector2(0.0, -1.0),
+	"up_left": Vector2(-0.89442719, -0.4472136),
+	"left": Vector2(-1.0, 0.0),
+	"down_left": Vector2(-0.89442719, 0.4472136),
 }
 
 const DIRECTION_LABELS_RU: Dictionary = {
@@ -71,7 +71,7 @@ const DIAGONAL_GRACE_TIME: float = 0.065
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
 var facing_name: String = "down_right"
-var facing_vector: Vector2 = Vector2(1, 0.5).normalized()
+var facing_vector: Vector2 = Vector2(0.89442719, 0.4472136)
 var current_state: String = "idle"
 var current_tool_index: int = 0
 
