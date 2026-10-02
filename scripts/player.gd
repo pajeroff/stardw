@@ -5,12 +5,12 @@ signal state_changed(anim_state: String, dir_name: String, dir_vector: Vector2)
 signal tool_changed(tool_index: int, tool_id: String, tool_title: String)
 signal tool_used(tool_id: String, target_global_pos: Vector2, facing_dir: Vector2)
 
-@export var walk_speed: float = 95.0
-@export var run_speed: float = 165.0
-@export var acceleration: float = 950.0
-@export var friction: float = 1150.0
+@export var walk_speed: float = 155.0
+@export var run_speed: float = 265.0
+@export var acceleration: float = 1400.0
+@export var friction: float = 1600.0
 
-# Order of directions matches rows in assets/sprites/player_spritesheet.png
+# Order of directions matches rows in assets/sprites/player_spritesheet.png (96x96 frames)
 const DIRECTIONS: Array[String] = [
 	"down",        # 0: S  (Вниз)
 	"down_right",  # 1: SE (Вниз-Вправо)
@@ -24,27 +24,27 @@ const DIRECTIONS: Array[String] = [
 
 const DIRECTION_VECTORS: Dictionary = {
 	"down": Vector2(0, 1),
-	"down_right": Vector2(1, 1),
+	"down_right": Vector2(1, 0.5).normalized(),
 	"right": Vector2(1, 0),
-	"up_right": Vector2(1, -1),
+	"up_right": Vector2(1, -0.5).normalized(),
 	"up": Vector2(0, -1),
-	"up_left": Vector2(-1, -1),
+	"up_left": Vector2(-1, -0.5).normalized(),
 	"left": Vector2(-1, 0),
-	"down_left": Vector2(-1, 1),
+	"down_left": Vector2(-1, 0.5).normalized(),
 }
 
 const DIRECTION_LABELS_RU: Dictionary = {
-	"down": "Вниз (Ю)",
-	"down_right": "Вниз-Вправо (ЮВ)",
-	"right": "Вправо (В)",
-	"up_right": "Вверх-Вправо (СВ)",
-	"up": "Вверх (С)",
-	"up_left": "Вверх-Влево (СЗ)",
-	"left": "Влево (З)",
-	"down_left": "Вниз-Влево (ЮЗ)",
+	"down": "Юг (Вниз)",
+	"down_right": "ЮВ (Изометрия Вниз-Вправо)",
+	"right": "Восток (Вправо)",
+	"up_right": "СВ (Изометрия Вверх-Вправо)",
+	"up": "Север (Вверх)",
+	"up_left": "СЗ (Изометрия Вверх-Влево)",
+	"left": "Запад (Влево)",
+	"down_left": "ЮЗ (Изометрия Вниз-Влево)",
 }
 
-# Animation table matching player_spritesheet.png (56 rows x 6 columns)
+# Animation table matching player_spritesheet.png (56 rows x 6 columns, 96x96 per frame)
 const ANIM_CONFIG: Dictionary = {
 	"idle":     {"base_row": 0,  "frames": 4, "fps": 6.0,  "loop": true},
 	"walk":     {"base_row": 8,  "frames": 6, "fps": 10.0, "loop": true},
@@ -56,10 +56,10 @@ const ANIM_CONFIG: Dictionary = {
 }
 
 const TOOLS: Array[Dictionary] = [
-	{"id": "axe",      "title": "Топор (Рубка леса)"},
-	{"id": "pickaxe",  "title": "Кирка (Добыча камня)"},
-	{"id": "water",    "title": "Лейка (Полив земли)"},
-	{"id": "interact", "title": "Рука (Сбор / Действие)"},
+	{"id": "axe",      "title": "Топор лесоруба"},
+	{"id": "pickaxe",  "title": "Кирка рудокопа"},
+	{"id": "water",    "title": "Фляга / Лейка"},
+	{"id": "interact", "title": "Посох странника (Сбор)"},
 ]
 
 const DIAGONAL_GRACE_TIME: float = 0.065
@@ -70,8 +70,8 @@ const DIAGONAL_GRACE_TIME: float = 0.065
 @onready var interaction_area: Area2D = $InteractionArea
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
-var facing_name: String = "down"
-var facing_vector: Vector2 = Vector2(0, 1)
+var facing_name: String = "down_right"
+var facing_vector: Vector2 = Vector2(1, 0.5).normalized()
 var current_state: String = "idle"
 var current_tool_index: int = 0
 
@@ -114,7 +114,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.is_action_pressed("use_tool"):
 			if event is InputEventMouseButton:
 				var to_mouse: Vector2 = get_global_mouse_position() - global_position
-				if to_mouse.length_squared() > 4.0:
+				if to_mouse.length_squared() > 9.0:
 					_set_facing_from_vector(to_mouse.normalized(), true)
 			start_tool_action(TOOLS[current_tool_index]["id"])
 		elif event.is_action_pressed("interact"):
@@ -148,10 +148,9 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		action_timer += delta
 
-		# Trigger world hit / interaction at ~55% of swing animation
 		if not action_hit_triggered and action_timer >= action_duration * 0.52:
 			action_hit_triggered = true
-			var reach_pos: Vector2 = global_position + Vector2(0, -7) + facing_vector.normalized() * 18.0
+			var reach_pos: Vector2 = global_position + Vector2(0, -8) + facing_vector.normalized() * 38.0
 			tool_used.emit(active_action_id, reach_pos, facing_vector.normalized())
 
 		if action_timer >= action_duration:
@@ -163,19 +162,19 @@ func _physics_process(delta: float) -> void:
 			queue_redraw()
 		return
 
-	# Read raw 8-way input vector
 	var raw_x: float = Input.get_axis("move_left", "move_right")
 	var raw_y: float = Input.get_axis("move_up", "move_down")
 	var input_vec := Vector2(raw_x, raw_y)
 
 	if input_vec.length_squared() > 0.01:
-		var norm_vec: Vector2 = input_vec.normalized()
-		_set_facing_from_vector(norm_vec, false)
+		# For isometric movement, diagonal movement uses 2:1 isometric slope (dx, dy * 0.65)
+		var iso_move_vec := Vector2(input_vec.x, input_vec.y * (0.65 if absf(input_vec.x) > 0.1 else 1.0)).normalized()
+		_set_facing_from_vector(input_vec.normalized(), false)
 		_update_interaction_transform()
 
 		var is_running: bool = Input.is_action_pressed("sprint")
 		var target_speed: float = run_speed if is_running else walk_speed
-		velocity = velocity.move_toward(norm_vec * target_speed, acceleration * delta)
+		velocity = velocity.move_toward(iso_move_vec * target_speed, acceleration * delta)
 
 		var target_anim: String = "run" if is_running else "walk"
 		_play_8dir_animation(target_anim, facing_name)
@@ -198,7 +197,6 @@ func _set_facing_from_vector(vec: Vector2, immediate: bool) -> void:
 		_diagonal_grace_timer = DIAGONAL_GRACE_TIME
 		facing_name = candidate
 	else:
-		# Preserve diagonal direction if player is in the middle of releasing two keys
 		if not immediate and _diagonal_grace_timer > 0.0 and _last_diagonal_name != "":
 			facing_name = _last_diagonal_name
 		else:
@@ -208,7 +206,6 @@ func _set_facing_from_vector(vec: Vector2, immediate: bool) -> void:
 
 
 static func vector_to_direction_name(vec: Vector2) -> String:
-	# Convert angle to 8 sectors of 45 degrees (PI / 4)
 	var angle: float = atan2(vec.y, vec.x)
 	var sector: int = int(round(angle / (PI / 4.0)))
 	match sector:
@@ -229,12 +226,12 @@ static func vector_to_direction_name(vec: Vector2) -> String:
 		-1:
 			return "up_right"
 		_:
-			return "down"
+			return "down_right"
 
 
 func _update_interaction_transform() -> void:
 	if interaction_area:
-		interaction_area.position = Vector2(0, -7) + facing_vector.normalized() * 18.0
+		interaction_area.position = Vector2(0, -8) + facing_vector.normalized() * 38.0
 
 
 func _play_8dir_animation(state_name: String, dir_name: String) -> void:
@@ -298,7 +295,7 @@ func _setup_animation_tree() -> void:
 	if not anim_tree:
 		return
 	var state_machine := AnimationNodeStateMachine.new()
-	var state_Mapping: Dictionary = {
+	var state_mapping: Dictionary = {
 		"Idle": "idle",
 		"Walk": "walk",
 		"Run": "run",
@@ -308,8 +305,8 @@ func _setup_animation_tree() -> void:
 		"Interact": "interact",
 	}
 
-	for node_title in state_Mapping.keys():
-		var prefix: String = state_Mapping[node_title]
+	for node_title in state_mapping.keys():
+		var prefix: String = state_mapping[node_title]
 		var bs2d := AnimationNodeBlendSpace2D.new()
 		bs2d.blend_mode = AnimationNodeBlendSpace2D.BLEND_MODE_DISCRETE
 		for dir_name in DIRECTIONS:
@@ -321,7 +318,6 @@ func _setup_animation_tree() -> void:
 
 	anim_tree.tree_root = state_machine
 	anim_tree.anim_player = anim_tree.get_path_to(anim_player)
-	# Keep direct AnimationPlayer control crisp and deterministic
 	anim_tree.active = false
 
 
@@ -337,13 +333,11 @@ func set_debug_draw(enabled: bool) -> void:
 func _draw() -> void:
 	if not debug_draw_enabled:
 		return
-	# Draw player body collision rectangle (12x14 centered at (0, -7))
-	var col_rect := Rect2(Vector2(-6, -14), Vector2(12, 14))
+	var col_rect := Rect2(Vector2(-12, -16), Vector2(24, 16))
 	draw_rect(col_rect, Color(0.1, 0.95, 1.0, 0.42), true)
-	draw_rect(col_rect, Color(0.0, 1.0, 1.0, 0.95), false, 1.2)
-	# Draw 8-direction vector arrow & interaction hitbox
-	var origin := Vector2(0, -7)
-	var tip: Vector2 = origin + facing_vector.normalized() * 18.0
-	draw_line(origin, tip, Color(1.0, 0.9, 0.2, 0.95), 1.5)
-	draw_circle(tip, 8.0, Color(1.0, 0.35, 0.2, 0.35))
-	draw_arc(tip, 8.0, 0.0, TAU, 20, Color(1.0, 0.45, 0.2, 0.9), 1.0)
+	draw_rect(col_rect, Color(0.0, 1.0, 1.0, 0.95), false, 1.5)
+	var origin := Vector2(0, -8)
+	var tip: Vector2 = origin + facing_vector.normalized() * 38.0
+	draw_line(origin, tip, Color(1.0, 0.9, 0.2, 0.95), 2.0)
+	draw_circle(tip, 16.0, Color(1.0, 0.35, 0.2, 0.32))
+	draw_arc(tip, 16.0, 0.0, TAU, 24, Color(1.0, 0.45, 0.2, 0.9), 1.5)

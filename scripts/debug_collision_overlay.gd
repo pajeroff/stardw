@@ -6,19 +6,24 @@ extends Node2D
 func _draw() -> void:
 	if not world or not world.debug_collisions:
 		return
-	var ts: float = float(GameWorld.TILE_SIZE)
-	var half: float = ts * 0.5
-	var fill_col := Color(0.1, 0.55, 1.0, 0.32)
-	var line_col := Color(0.2, 0.85, 1.0, 0.85)
+	var hw: float = float(GameWorld.TILE_W) * 0.5
+	var hh: float = float(GameWorld.TILE_H) * 0.5
+	var fill_col := Color(0.1, 0.55, 1.0, 0.34)
+	var line_col := Color(0.2, 0.85, 1.0, 0.90)
 
 	for cell in world.water_cells:
-		var center: Vector2 = world.ground_layer.map_to_local(cell)
-		var rect := Rect2(center - Vector2(half, half), Vector2(ts, ts))
-		draw_rect(rect, fill_col, true)
-		draw_rect(rect, line_col, false, 0.85)
-
-	var rail_fill := Color(1.0, 0.65, 0.1, 0.55)
-	var rail_line := Color(1.0, 0.85, 0.2, 0.95)
-	for rail_rect in world.bridge_rail_rects:
-		draw_rect(rail_rect, rail_fill, true)
-		draw_rect(rail_rect, rail_line, false, 1.0)
+		var c: Vector2 = world.ground_layer.map_to_local(cell)
+		var pts := PackedVector2Array([
+			c + Vector2(0, -hh),
+			c + Vector2(hw, 0),
+			c + Vector2(0, hh),
+			c + Vector2(-hw, 0),
+			c + Vector2(0, -hh),
+		])
+		draw_colored_polygon(PackedVector2Array([
+			c + Vector2(0, -hh),
+			c + Vector2(hw, 0),
+			c + Vector2(0, hh),
+			c + Vector2(-hw, 0),
+		]), fill_col)
+		draw_polyline(pts, line_col, 1.2)

@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" path="res://assets/objects/tree_oak.png" id="2_obj_tex"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_base"]
-size = Vector2(16, 16)
+size = Vector2(44, 26)
 
 [node name="WorldObject" type="StaticBody2D" groups=["world_object"]]
 y_sort_enabled = true
@@ -15,8 +15,8 @@ script = ExtResource("1_obj_script")
 [node name="Sprite2D" type="Sprite2D" parent="."]
 texture_filter = 1
 texture = ExtResource("2_obj_tex")
-offset = Vector2(0, -18)
+offset = Vector2(0, -76)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, -5)
+position = Vector2(0, -8)
 shape = SubResource("RectangleShape2D_base")

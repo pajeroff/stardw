@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Stardw — Godot 4.7 Pixel-Art Interactive Preview</title>
+  <title>Stardw — Godot 4.7 Isometric AI Pixel-Art Preview</title>
   <style>
     :root {
-      --bg: #151922;
-      --panel: rgba(22, 27, 38, 0.92);
-      --border: #2e384d;
-      --accent: #63c777;
+      --bg: #121722;
+      --panel: rgba(20, 26, 38, 0.92);
+      --border: #2e3a52;
+      --accent: #66d27b;
       --gold: #f5d04c;
       --text: #eef2f8;
       --muted: #9aa6bc;
@@ -29,7 +29,7 @@
       flex: 1;
       height: 100vh;
       overflow: hidden;
-      background: #1d4e89;
+      background: #163b70;
     }
     canvas#world-canvas {
       width: 100%;
@@ -39,7 +39,6 @@
       image-rendering: crisp-edges;
       cursor: crosshair;
     }
-    /* Top-left HUD */
     .hud-top {
       position: absolute;
       top: 12px;
@@ -48,7 +47,7 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 12px 14px;
-      max-width: 540px;
+      max-width: 560px;
       backdrop-filter: blur(6px);
       box-shadow: 0 8px 24px rgba(0,0,0,0.45);
       font-size: 13px;
@@ -108,7 +107,6 @@
       border-color: var(--accent);
       color: #a6f4b5;
     }
-    /* Bottom Hotbar */
     .hotbar {
       position: absolute;
       bottom: 14px;
@@ -143,10 +141,9 @@
       height: 24px;
       image-rendering: pixelated;
     }
-    /* Right sidebar inspector */
     #sidebar {
-      width: 310px;
-      background: #171c26;
+      width: 325px;
+      background: #161b25;
       border-left: 1px solid var(--border);
       padding: 14px;
       display: flex;
@@ -155,7 +152,7 @@
       overflow-y: auto;
     }
     .card {
-      background: #1e2533;
+      background: #1d2432;
       border: 1px solid var(--border);
       border-radius: 9px;
       padding: 10px 12px;
@@ -175,7 +172,7 @@
     #char-preview-canvas {
       width: 96px;
       height: 96px;
-      background: #263042;
+      background: #252f42;
       border: 1px solid #394761;
       border-radius: 8px;
       image-rendering: pixelated;
@@ -214,12 +211,12 @@
       align-items: center;
     }
     .asset-thumbs img {
-      background: #263042;
+      background: #252f42;
       border: 1px solid #36445e;
       border-radius: 5px;
       padding: 3px;
       image-rendering: pixelated;
-      height: 40px;
+      height: 46px;
     }
   </style>
 </head>
@@ -229,12 +226,12 @@
 
     <div class="hud-top">
       <div class="hud-title">
-        <span>Stardw — Godot 4.7 (Интерактивное превью)</span>
+        <span>Stardw — Godot 4.7 Изометрический мир (AI HD Pixel-Art)</span>
         <span class="badge" id="seed-badge">Сид: 20261002</span>
       </div>
-      <div id="state-line">Анимация: <b>idle_down</b> | Направление: <b>Вниз (Ю)</b></div>
+      <div id="state-line">Анимация: <b>idle_down_right</b> | Направление: <b>ЮВ (Изометрия)</b></div>
       <div style="color: var(--muted); font-size: 12px; margin-top: 2px;">
-        <b>WASD / Стрелки</b> — ходьба (8 осей) &bull; <b>Shift</b> — бег &bull; <b>Пробел / ЛКМ</b> — инструмент &bull; <b>E</b> — действие
+        <b>WASD / Стрелки</b> — ходьба (8 осей) &bull; <b>Shift</b> — бег &bull; <b>Пробел / ЛКМ</b> — инструмент &bull; <b>E</b> — посох
       </div>
       <div class="res-bar">
         <span>🪵 Дерево: <b id="res-wood">0</b></span>
@@ -244,7 +241,7 @@
       </div>
       <div class="btn-row">
         <button class="btn" id="btn-regen">🎲 [R] Новый сид мира</button>
-        <button class="btn" id="btn-debug">🛡️ [C] Показать коллизии</button>
+        <button class="btn" id="btn-debug">🛡️ [C] Показать изо-коллизии</button>
       </div>
     </div>
 
@@ -259,37 +256,37 @@
       </div>
       <div class="slot" data-tool="2">
         <img src="/assets/ui/icon_water.png" alt="Water" />
-        <span>[3] Лейка</span>
+        <span>[3] Фляга</span>
       </div>
       <div class="slot" data-tool="3">
         <img src="/assets/ui/icon_hand.png" alt="Hand" />
-        <span>[4] Рука</span>
+        <span>[4] Посох</span>
       </div>
     </div>
   </div>
 
   <aside id="sidebar">
     <div class="card">
-      <h3>Инспектор 8 осей и анимаций</h3>
+      <h3>Путешественник (AI 96×96 px, 8 осей)</h3>
       <div class="preview-box">
-        <canvas id="char-preview-canvas" width="32" height="32"></canvas>
+        <canvas id="char-preview-canvas" width="96" height="96"></canvas>
         <div style="font-size: 12px; line-height: 1.5;">
-          <div>Спрайт: <b>32×32 px</b></div>
-          <div>Лист: <b>56 рядов × 6 кадров</b></div>
-          <div>Тайлы: <b>16×16 px</b></div>
+          <div>Герой: <b>96×96 px (HD)</b></div>
+          <div>Изо-тайл: <b>64×32 px (2:1)</b></div>
+          <div>Анимаций: <b>56 (8×7)</b></div>
           <div id="inspector-frame" style="color: var(--gold);">Кадр: 0</div>
         </div>
       </div>
       <div class="compass-grid" id="compass-grid">
-        <button class="compass-btn" data-dir="up_left">↖ СЗ (up_left)</button>
-        <button class="compass-btn" data-dir="up">↑ С (up)</button>
-        <button class="compass-btn" data-dir="up_right">↗ СВ (up_right)</button>
-        <button class="compass-btn" data-dir="left">← З (left)</button>
+        <button class="compass-btn" data-dir="up_left">↖ СЗ</button>
+        <button class="compass-btn" data-dir="up">↑ С</button>
+        <button class="compass-btn" data-dir="up_right">↗ СВ</button>
+        <button class="compass-btn" data-dir="left">← З</button>
         <button class="compass-btn" style="cursor:default;opacity:0.5;">8 ОСЕЙ</button>
-        <button class="compass-btn" data-dir="right">→ В (right)</button>
-        <button class="compass-btn" data-dir="down_left">↙ ЮЗ (down_left)</button>
-        <button class="compass-btn active" data-dir="down">↓ Ю (down)</button>
-        <button class="compass-btn" data-dir="down_right">↘ ЮВ (down_right)</button>
+        <button class="compass-btn" data-dir="right">→ В</button>
+        <button class="compass-btn" data-dir="down_left">↙ ЮЗ</button>
+        <button class="compass-btn" data-dir="down">↓ Ю</button>
+        <button class="compass-btn active" data-dir="down_right">↘ ЮВ</button>
       </div>
     </div>
 
@@ -302,20 +299,22 @@
         <button class="btn" data-anim="axe">Топор (axe)</button>
         <button class="btn" data-anim="pickaxe">Кирка (pickaxe)</button>
         <button class="btn" data-anim="water">Полив (water)</button>
-        <button class="btn" data-anim="interact">Действие (E)</button>
+        <button class="btn" data-anim="interact">Посох (E)</button>
       </div>
     </div>
 
     <div class="card">
-      <h3>Сгенерированные ассеты мира</h3>
+      <h3>ИИ-ассеты окружения (разновидности)</h3>
       <div class="asset-thumbs">
-        <img src="/assets/objects/tree_oak.png" title="Дуб (tree_oak.png)" />
-        <img src="/assets/objects/tree_pine.png" title="Ель (tree_pine.png)" />
-        <img src="/assets/objects/tree_birch.png" title="Берёза (tree_birch.png)" />
-        <img src="/assets/objects/rock_large.png" title="Валун (rock_large.png)" />
-        <img src="/assets/objects/rock_ore.png" title="Руда (rock_ore.png)" />
-        <img src="/assets/objects/bush_berry.png" title="Куст ягод (bush_berry.png)" />
-        <img src="/assets/objects/log_fallen.png" title="Бревно (log_fallen.png)" />
+        <img src="/assets/objects/tree_oak.png" title="Древний дуб (tree_oak.png)" />
+        <img src="/assets/objects/tree_willow.png" title="Плакучая ива (tree_willow.png)" />
+        <img src="/assets/objects/tree_pine.png" title="Северная ель (tree_pine.png)" />
+        <img src="/assets/objects/tree_birch.png" title="Золотая берёза (tree_birch.png)" />
+        <img src="/assets/objects/rock_large.png" title="Моховой валун (rock_large.png)" />
+        <img src="/assets/objects/rock_slate.png" title="Скальный сланец (rock_slate.png)" />
+        <img src="/assets/objects/rock_ore.png" title="Кристальная руда (rock_ore.png)" />
+        <img src="/assets/objects/bush_berry.png" title="Ягодный куст (bush_berry.png)" />
+        <img src="/assets/objects/log_fallen.png" title="Поваленное бревно (log_fallen.png)" />
         <img src="/assets/objects/tree_stump.png" title="Пень (tree_stump.png)" />
       </div>
     </div>
@@ -328,23 +327,23 @@
     ];
     const DIR_VECTORS = {
       down: {x: 0, y: 1},
-      down_right: {x: 1, y: 1},
+      down_right: {x: 0.894, y: 0.447},
       right: {x: 1, y: 0},
-      up_right: {x: 1, y: -1},
+      up_right: {x: 0.894, y: -0.447},
       up: {x: 0, y: -1},
-      up_left: {x: -1, y: -1},
+      up_left: {x: -0.894, y: -0.447},
       left: {x: -1, y: 0},
-      down_left: {x: -1, y: 1}
+      down_left: {x: -0.894, y: 0.447}
     };
     const DIR_LABELS_RU = {
-      down: "Вниз (Ю)",
-      down_right: "Вниз-Вправо (ЮВ)",
-      right: "Вправо (В)",
-      up_right: "Вверх-Вправо (СВ)",
-      up: "Вверх (С)",
-      up_left: "Вверх-Влево (СЗ)",
-      left: "Влево (З)",
-      down_left: "Вниз-Влево (ЮЗ)"
+      down: "Юг (Вниз)",
+      down_right: "ЮВ (Изометрия Вниз-Вправо)",
+      right: "Восток (Вправо)",
+      up_right: "СВ (Изометрия Вверх-Вправо)",
+      up: "Север (Вверх)",
+      up_left: "СЗ (Изометрия Вверх-Влево)",
+      left: "Запад (Влево)",
+      down_left: "ЮЗ (Изометрия Вниз-Влево)"
     };
     const ANIM_CONFIG = {
       idle:     { baseRow: 0,  frames: 4, fps: 6,  loop: true },
@@ -362,11 +361,13 @@
       ["player", "/assets/sprites/player_spritesheet.png"],
       ["tileset", "/assets/tilesets/world_tileset.png"],
       ["tree_oak", "/assets/objects/tree_oak.png"],
+      ["tree_willow", "/assets/objects/tree_willow.png"],
       ["tree_pine", "/assets/objects/tree_pine.png"],
       ["tree_birch", "/assets/objects/tree_birch.png"],
       ["tree_stump", "/assets/objects/tree_stump.png"],
       ["bush_berry", "/assets/objects/bush_berry.png"],
       ["rock_large", "/assets/objects/rock_large.png"],
+      ["rock_slate", "/assets/objects/rock_slate.png"],
       ["rock_small", "/assets/objects/rock_small.png"],
       ["rock_ore", "/assets/objects/rock_ore.png"],
       ["log_fallen", "/assets/objects/log_fallen.png"]
@@ -411,35 +412,54 @@
       return val / maxAmp;
     }
 
-    const MAP_W = 88, MAP_H = 68, TILE = 16;
+    // Isometric 2:1 Diamond Constants matching scripts/world.gd
+    const MAP_W = 56, MAP_H = 56;
+    const TILE_W = 64, TILE_H = 32, CELL_H = 40;
+    const HALF_W = TILE_W / 2; // 32
+    const HALF_H = TILE_H / 2; // 16
+
+    function gridToIso(tx, ty) {
+      return {
+        x: (tx - ty) * HALF_W,
+        y: (tx + ty) * HALF_H
+      };
+    }
+
+    function isoToGrid(wx, wy) {
+      const fx = (wx / HALF_W + wy / HALF_H) * 0.5;
+      const fy = (wy / HALF_H - wx / HALF_W) * 0.5;
+      return { tx: Math.round(fx), ty: Math.round(fy) };
+    }
+
     let worldSeed = 20261002;
     let groundGrid = [];
     let decorGrid = [];
     let waterCells = new Set();
-    let bridgeRailRects = [];
     let worldObjects = [];
     let debugCollisions = false;
     let inventory = { wood: 0, stone: 0, berry: 0, watered: 0 };
 
-    // Exact same ground-anchored collision definitions as scripts/world_object.gd
+    // Exact same high-res AI object definitions as scripts/world_object.gd
     const OBJECT_DEFS = {
-      tree_oak:   { w: 32, h: 48, offY: -18, colW: 16, colH: 16, colOffY: -5, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
-      tree_pine:  { w: 32, h: 48, offY: -18, colW: 16, colH: 16, colOffY: -5, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
-      tree_birch: { w: 32, h: 48, offY: -18, colW: 15, colH: 16, colOffY: -5, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
-      tree_stump: { w: 16, h: 16, offY: -4,  colW: 12, colH: 10, colOffY: -2, hp: 2, tool: "axe", drop: "wood", amt: 1, stump: false },
-      log_fallen: { w: 32, h: 16, offY: -4,  colW: 28, colH: 11, colOffY: -3, hp: 2, tool: "axe", drop: "wood", amt: 2, stump: false },
-      bush_berry: { w: 16, h: 16, offY: -4,  colW: 14, colH: 12, colOffY: -3, hp: 1, tool: "any", drop: "berry", amt: 2, stump: false },
-      rock_large: { w: 32, h: 32, offY: -8,  colW: 24, colH: 18, colOffY: -5, hp: 4, tool: "pickaxe", drop: "stone", amt: 4, stump: false },
-      rock_small: { w: 16, h: 16, offY: -4,  colW: 14, colH: 12, colOffY: -3, hp: 2, tool: "pickaxe", drop: "stone", amt: 2, stump: false },
-      rock_ore:   { w: 16, h: 16, offY: -4,  colW: 14, colH: 12, colOffY: -3, hp: 3, tool: "pickaxe", drop: "stone", amt: 3, stump: false }
+      tree_oak:    { w: 160, h: 176, offY: -76, colW: 44, colH: 26, colOffY: -8,  hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_willow: { w: 168, h: 176, offY: -76, colW: 48, colH: 28, colOffY: -8,  hp: 3, tool: "axe", drop: "wood", amt: 4, stump: true },
+      tree_pine:   { w: 144, h: 192, offY: -84, colW: 34, colH: 24, colOffY: -8,  hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_birch:  { w: 144, h: 176, offY: -76, colW: 32, colH: 22, colOffY: -8,  hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_stump:  { w: 64,  h: 56,  offY: -20, colW: 38, colH: 22, colOffY: -7,  hp: 2, tool: "axe", drop: "wood", amt: 1, stump: false },
+      log_fallen:  { w: 96,  h: 56,  offY: -20, colW: 64, colH: 24, colOffY: -8,  hp: 2, tool: "axe", drop: "wood", amt: 2, stump: false },
+      bush_berry:  { w: 68,  h: 60,  offY: -22, colW: 42, colH: 24, colOffY: -8,  hp: 1, tool: "any", drop: "berry", amt: 2, stump: false },
+      rock_large:  { w: 112, h: 96,  offY: -36, colW: 72, colH: 38, colOffY: -12, hp: 4, tool: "pickaxe", drop: "stone", amt: 4, stump: false },
+      rock_slate:  { w: 112, h: 96,  offY: -36, colW: 74, colH: 40, colOffY: -12, hp: 4, tool: "pickaxe", drop: "stone", amt: 5, stump: false },
+      rock_ore:    { w: 88,  h: 76,  offY: -28, colW: 56, colH: 30, colOffY: -10, hp: 3, tool: "pickaxe", drop: "stone", amt: 4, stump: false },
+      rock_small:  { w: 64,  h: 56,  offY: -20, colW: 40, colH: 22, colOffY: -7,  hp: 2, tool: "pickaxe", drop: "stone", amt: 2, stump: false }
     };
 
     const player = {
       x: 0,
       y: 0,
-      walkSpeed: 95,
-      runSpeed: 165,
-      facing: "down",
+      walkSpeed: 155,
+      runSpeed: 265,
+      facing: "down_right",
       state: "idle",
       toolIndex: 0,
       animFrame: 0,
@@ -473,12 +493,12 @@
     });
 
     function getRiverCenterX(ty, baseX, bridgeYs, seed, phase) {
-      let rawOffset = Math.sin(ty * 0.11 + phase) * 4.5 + fbm(ty * 0.025, 0, seed + 1013, 2) * 4.0;
+      let rawOffset = Math.sin(ty * 0.13 + phase) * 3.5 + fbm(ty * 0.032, 0, seed + 1013, 2) * 3.0;
       for (const by of bridgeYs) {
         const distY = Math.abs(ty - (by + 0.5));
-        if (distY < 5.0) {
-          const targetOffset = Math.round(Math.sin(by * 0.11 + phase) * 4.5 + fbm(by * 0.025, 0, seed + 1013, 2) * 4.0);
-          const t = Math.max(0, Math.min(1, distY / 5.0));
+        if (distY < 4.5) {
+          const targetOffset = Math.round(Math.sin(by * 0.13 + phase) * 3.5 + fbm(by * 0.032, 0, seed + 1013, 2) * 3.0);
+          const t = Math.max(0, Math.min(1, distY / 4.5));
           const smoothT = t * t * (3 - 2 * t);
           rawOffset = targetOffset + (rawOffset - targetOffset) * smoothT;
         }
@@ -501,19 +521,18 @@
       groundGrid = [];
       decorGrid = [];
       waterCells.clear();
-      bridgeRailRects = [];
       worldObjects = [];
 
       const halfW = MAP_W / 2, halfH = MAP_H / 2;
-      const riverBaseX = (seed % 2 === 0) ? 13.0 : 11.0;
+      const riverBaseX = (seed % 2 === 0) ? 9.0 : 8.0;
       const riverPhase = hash2D(seed, 17, seed) * Math.PI * 2;
-      const riverHalfWidth = 2.0;
-      const bridgeYs = [-18, 0, 18];
+      const riverHalfWidth = 1.6;
+      const bridgeYs = [-13, 0, 13];
 
-      const lake1Center = { x: -24.0 + (hash2D(1, 2, seed) - 0.5) * 4, y: -14.0 + (hash2D(3, 4, seed) - 0.5) * 4 };
-      const lake1Radius = 8.2;
-      const lake2Center = { x: -22.0 + (hash2D(5, 6, seed) - 0.5) * 4, y: 15.0 + (hash2D(7, 8, seed) - 0.5) * 4 };
-      const lake2Radius = 7.2;
+      const lake1Center = { x: -14.0 + (hash2D(1, 2, seed) - 0.5) * 3, y: -10.0 + (hash2D(3, 4, seed) - 0.5) * 3 };
+      const lake1Radius = 6.2;
+      const lake2Center = { x: -13.0 + (hash2D(5, 6, seed) - 0.5) * 3, y: 11.0 + (hash2D(7, 8, seed) - 0.5) * 3 };
+      const lake2Radius = 5.6;
 
       const bridgeLookup = new Set();
       const pathLookup = new Set();
@@ -522,18 +541,14 @@
 
       for (const by of bridgeYs) {
         const rcx = Math.round(getRiverCenterX(by, riverBaseX, bridgeYs, seed, riverPhase));
-        const bxStart = rcx - 3;
-        const bxEnd = rcx + 3;
+        const bxStart = rcx - 2;
+        const bxEnd = rcx + 2;
         bridgeSpans.push({ by, x0: bxStart, x1: bxEnd, rcx });
         for (let ty = by; ty < by + 2; ty++) {
           for (let tx = bxStart; tx <= bxEnd; tx++) {
             bridgeLookup.add(`${tx},${ty}`);
           }
         }
-        const waterX0 = (rcx - 2) * TILE;
-        const waterW = 5 * TILE;
-        bridgeRailRects.push({ x: waterX0, y: by * TILE, w: waterW, h: 2 });
-        bridgeRailRects.push({ x: waterX0, y: (by + 2) * TILE - 2, w: waterW, h: 2 });
       }
 
       for (const span of bridgeSpans) {
@@ -541,7 +556,7 @@
           pathLookup.add(`${tx},${span.by}`);
           pathLookup.add(`${tx},${span.by + 1}`);
         }
-        for (let tx = span.x1 + 1; tx < span.x1 + 7; tx++) {
+        for (let tx = span.x1 + 1; tx < span.x1 + 6; tx++) {
           pathLookup.add(`${tx},${span.by}`);
           pathLookup.add(`${tx},${span.by + 1}`);
         }
@@ -565,29 +580,29 @@
           const variant = ((tx * 7 + ty * 13) % 4 + 4) % 4;
 
           if (bridgeLookup.has(key)) {
-            row.push({ col: variant % 2, row: 2 });
+            row.push({ col: variant % 4, row: 2 });
             dRow.push(null);
             continue;
           }
 
-          const elev = fbm(tx * 0.035, ty * 0.035, seed, 3);
-          const fVal = fbm(tx * 0.052, ty * 0.052, seed + 4099, 2);
+          const elev = fbm(tx * 0.045, ty * 0.045, seed, 3);
+          const fVal = fbm(tx * 0.065, ty * 0.065, seed + 4099, 2);
 
           const riverDist = Math.abs(tx - rcx);
           const isRiver = riverDist <= riverHalfWidth;
 
-          const l1Dist = Math.hypot(tx - lake1Center.x, ty - lake1Center.y) + elev * 2.4;
-          const l2Dist = Math.hypot(tx - lake2Center.x, ty - lake2Center.y) + elev * 2.2;
+          const l1Dist = Math.hypot(tx - lake1Center.x, ty - lake1Center.y) + elev * 1.8;
+          const l2Dist = Math.hypot(tx - lake2Center.x, ty - lake2Center.y) + elev * 1.8;
           const isLake1 = l1Dist < lake1Radius;
           const isLake2 = l2Dist < lake2Radius;
-          const isDeepLake = (l1Dist < lake1Radius * 0.56) || (l2Dist < lake2Radius * 0.56);
+          const isDeepLake = (l1Dist < lake1Radius * 0.55) || (l2Dist < lake2Radius * 0.55);
           const isLake = isLake1 || isLake2;
 
           if (isRiver || isLake) {
             let wCol = variant;
             if (isDeepLake) wCol = variant;
             else if (isRiver) wCol = 8 + variant;
-            else wCol = (hash2D(tx, ty, seed + 77) < 0.16) ? (12 + variant) : (4 + variant);
+            else wCol = (hash2D(tx, ty, seed + 77) < 0.18) ? (12 + variant) : (4 + variant);
             row.push({ col: wCol, row: 0 });
             dRow.push(null);
             waterCells.add(key);
@@ -596,10 +611,14 @@
 
           if (pathLookup.has(key)) {
             row.push({ col: 12 + variant, row: 1 });
-          } else if (riverDist <= riverHalfWidth + 1.4 || l1Dist < lake1Radius + 1.8 || l2Dist < lake2Radius + 1.8) {
+          } else if (riverDist <= riverHalfWidth + 1.3 || l1Dist < lake1Radius + 1.5 || l2Dist < lake2Radius + 1.5) {
             row.push({ col: variant, row: 1 });
             sandLookup.add(key);
-          } else if (fVal > 0.08 || elev > 0.20) {
+          } else if (ty < -9 && elev > 0.18) {
+            row.push({ col: 8 + variant, row: 2 });
+          } else if (tx > riverBaseX + 3 && fVal > 0.0) {
+            row.push({ col: 12 + variant, row: 2 });
+          } else if (fVal > 0.08 || elev > 0.18) {
             row.push({ col: 8 + variant, row: 1 });
           } else {
             row.push({ col: 4 + variant, row: 1 });
@@ -610,61 +629,72 @@
         decorGrid.push(dRow);
       }
 
-      // Pass 2: Place Forest Objects & Decor with strict clearance zones
       const occupied = new Set();
       for (let ty = -halfH + 3; ty < halfH - 3; ty++) {
         for (let tx = -halfW + 3; tx < halfW - 3; tx++) {
           const key = `${tx},${ty}`;
-          if (waterCells.has(key) || bridgeLookup.has(key) || pathLookup.has(key) || sandLookup.has(key)) continue;
-          if (Math.hypot(tx, ty) < 5.0) continue;
-          if (hasNeighborInSet(waterCells, tx, ty, 2)) continue;
+          if (waterCells.has(key) || bridgeLookup.has(key) || pathLookup.has(key)) continue;
+          if (Math.hypot(tx, ty) < 4.2) continue;
+          if (hasNeighborInSet(waterCells, tx, ty, 1)) continue;
           if (hasNeighborInSet(bridgeLookup, tx, ty, 3)) continue;
           if (hasNeighborInSet(pathLookup, tx, ty, 1)) continue;
 
-          const elev = fbm(tx * 0.035, ty * 0.035, seed, 3);
-          const fVal = fbm(tx * 0.052, ty * 0.052, seed + 4099, 2);
+          const nearWaterRing = hasNeighborInSet(waterCells, tx, ty, 3);
+          const elev = fbm(tx * 0.045, ty * 0.045, seed, 3);
+          const fVal = fbm(tx * 0.065, ty * 0.065, seed + 4099, 2);
           const roll = hash2D(tx, ty, seed + 999);
 
           if (!hasNeighborInSet(occupied, tx, ty, 2)) {
-            if (fVal > 0.06 && roll < 0.34) {
+            if (nearWaterRing && roll < 0.22) {
+              spawnObject("tree_willow", tx, ty);
+              occupied.add(key);
+              continue;
+            } else if (!sandLookup.has(key) && fVal > 0.05 && roll < 0.34) {
               let kind = "tree_oak";
-              if (ty < -8 || elev > 0.26) kind = "tree_pine";
+              if (ty < -7 || elev > 0.24) kind = "tree_pine";
               else if (tx > riverBaseX + 3) kind = ((tx + ty) % 2 === 0) ? "tree_birch" : "tree_oak";
               spawnObject(kind, tx, ty);
               occupied.add(key);
               continue;
-            } else if (fVal > -0.05 && roll > 0.34 && roll < 0.39) {
-              spawnObject(roll < 0.375 ? "bush_berry" : "log_fallen", tx, ty);
+            } else if (!sandLookup.has(key) && fVal > -0.05 && roll > 0.34 && roll < 0.395) {
+              spawnObject(roll < 0.38 ? "bush_berry" : "log_fallen", tx, ty);
               occupied.add(key);
               continue;
-            } else if ((elev > 0.14 || tx > riverBaseX + 6) && roll > 0.93) {
-              const rKind = roll > 0.975 ? "rock_large" : (roll > 0.95 ? "rock_ore" : "rock_small");
+            } else if ((elev > 0.12 || ty < -8 || tx > riverBaseX + 5) && roll > 0.91) {
+              const rRoll = hash2D(tx, ty, seed + 444);
+              let rKind = "rock_small";
+              if (rRoll < 0.28) rKind = (ty < -4) ? "rock_slate" : "rock_large";
+              else if (rRoll < 0.56) rKind = "rock_ore";
+              else if (rRoll < 0.78) rKind = "rock_large";
               spawnObject(rKind, tx, ty);
               occupied.add(key);
               continue;
             }
           }
 
-          if (!occupied.has(key) && hash2D(tx, ty, seed + 555) < 0.13) {
+          if (!occupied.has(key) && hash2D(tx, ty, seed + 555) < 0.14) {
             const dv = Math.floor(hash2D(tx, ty, seed + 333) * 4) % 4;
-            decorGrid[ty + halfH][tx + halfW] = {
-              col: (fVal > 0.16 && hash2D(tx, ty, seed + 222) < 0.42) ? (8 + dv) : (hash2D(tx, ty, seed + 111) < 0.55 ? dv : 4 + dv),
-              row: 3
-            };
+            let dCol = dv;
+            if (sandLookup.has(key)) dCol = 12 + dv;
+            else if (fVal > 0.16) dCol = (hash2D(tx, ty, seed + 222) < 0.45) ? (8 + dv) : (4 + dv);
+            else dCol = (hash2D(tx, ty, seed + 111) < 0.55) ? dv : (4 + dv);
+            decorGrid[ty + halfH][tx + halfW] = { col: dCol, row: 3 };
           }
         }
       }
 
-      player.x = 0;
-      player.y = 0;
+      const spawnIso = gridToIso(0, 0);
+      player.x = spawnIso.x;
+      player.y = spawnIso.y;
     }
 
     function spawnObject(type, tx, ty) {
       const def = OBJECT_DEFS[type];
+      const pos = gridToIso(tx, ty);
       worldObjects.push({
         type,
-        x: tx * TILE + TILE / 2,
-        y: ty * TILE + TILE / 2,
+        x: pos.x,
+        y: pos.y,
         hp: def.hp,
         shakeTime: 0
       });
@@ -683,7 +713,7 @@
         case -3: return "up_left";
         case -2: return "up";
         case -1: return "up_right";
-        default: return "down";
+        default: return "down_right";
       }
     }
 
@@ -711,12 +741,12 @@
     function applyToolHit(toolId) {
       const fVec = DIR_VECTORS[player.facing];
       const len = Math.hypot(fVec.x, fVec.y) || 1;
-      const hitX = player.x + (fVec.x / len) * 18;
-      const hitY = player.y - 7 + (fVec.y / len) * 18;
+      const hitX = player.x + (fVec.x / len) * 38;
+      const hitY = player.y - 8 + (fVec.y / len) * 38;
 
-      let bestObj = null, bestDist = 22;
+      let bestObj = null, bestDist = 52;
       for (const obj of worldObjects) {
-        const d = Math.hypot(obj.x - hitX, (obj.y - 5) - hitY);
+        const d = Math.hypot(obj.x - hitX, (obj.y - 8) - hitY);
         if (d < bestDist) {
           bestDist = d;
           bestObj = obj;
@@ -743,14 +773,13 @@
       }
 
       if (toolId === "water") {
-        const tx = Math.floor(hitX / TILE);
-        const ty = Math.floor(hitY / TILE);
-        const gx = tx + MAP_W / 2;
-        const gy = ty + MAP_H / 2;
+        const g = isoToGrid(hitX, hitY);
+        const gx = g.tx + MAP_W / 2;
+        const gy = g.ty + MAP_H / 2;
         if (gy >= 0 && gy < MAP_H && gx >= 0 && gx < MAP_W) {
           const tile = groundGrid[gy][gx];
-          if (tile.row === 1) {
-            const v = ((tx + ty) % 4 + 4) % 4;
+          if (tile.row === 1 || (tile.row === 2 && tile.col >= 8)) {
+            const v = ((g.tx + g.ty) % 4 + 4) % 4;
             groundGrid[gy][gx] = { col: 4 + v, row: 2 };
             if (!decorGrid[gy][gx]) decorGrid[gy][gx] = { col: v, row: 3 };
             inventory.watered++;
@@ -765,40 +794,33 @@
     }
 
     function isCollidingAt(px, py) {
-      // Player AABB: 12x14 centered at (px, py - 7) -> [px - 6..px + 6, py - 14..py]
-      const pLeft = px - 6;
-      const pTop = py - 14;
-      const pW = 12;
-      const pH = 14;
+      // Player AABB: 24x16 centered at (px, py - 8) -> [px - 12..px + 12, py - 16..py]
+      const pLeft = px - 12;
+      const pTop = py - 16;
+      const pW = 24;
+      const pH = 16;
 
-      const maxW = (MAP_W / 2) * TILE - 8;
-      const maxH = (MAP_H / 2) * TILE - 8;
-      if (pLeft < -maxW || pLeft + pW > maxW || pTop < -maxH || pTop + pH > maxH) return true;
+      // Check 9 sample points around player feet AABB in exact Isometric Grid coordinates
+      const samplePts = [
+        [pLeft, pTop], [px, pTop], [pLeft + pW, pTop],
+        [pLeft, py - 8], [px, py - 8], [pLeft + pW, py - 8],
+        [pLeft, py], [px, py], [pLeft + pW, py]
+      ];
 
-      // Water tiles collision
-      const minTx = Math.floor(pLeft / TILE);
-      const maxTx = Math.floor((pLeft + pW - 0.001) / TILE);
-      const minTy = Math.floor(pTop / TILE);
-      const maxTy = Math.floor((pTop + pH - 0.001) / TILE);
+      const halfMapW = MAP_W / 2 - 1;
+      const halfMapH = MAP_H / 2 - 1;
 
-      for (let ty = minTy; ty <= maxTy; ty++) {
-        for (let tx = minTx; tx <= maxTx; tx++) {
-          if (waterCells.has(`${tx},${ty}`)) {
-            if (rectsOverlap(pLeft, pTop, pW, pH, tx * TILE, ty * TILE, TILE, TILE)) {
-              return true;
-            }
-          }
+      for (const [sx, sy] of samplePts) {
+        const g = isoToGrid(sx, sy);
+        if (g.tx < -halfMapW || g.tx > halfMapW || g.ty < -halfMapH || g.ty > halfMapH) {
+          return true;
         }
-      }
-
-      // Bridge guardrails collision
-      for (const rail of bridgeRailRects) {
-        if (rectsOverlap(pLeft, pTop, pW, pH, rail.x, rail.y, rail.w, rail.h)) {
+        if (waterCells.has(`${g.tx},${g.ty}`)) {
           return true;
         }
       }
 
-      // World objects collision (Trees, Rocks, Bushes, Logs, Stumps)
+      // Check solid WorldObjects (Trees, Rocks, Slate, Ore, Bushes, Logs, Stumps)
       for (const obj of worldObjects) {
         const def = OBJECT_DEFS[obj.type];
         const rx = obj.x - def.colW / 2;
@@ -845,12 +867,17 @@
             player.facing = candidate;
           }
 
+          // Isometric 2:1 movement vector adjustment
+          const isoVy = (Math.abs(ix) > 0.1) ? iy * 0.65 : iy;
+          const isoLen = Math.hypot(ix, isoVy) || 1;
+          const mx = ix / isoLen, my = isoVy / isoLen;
+
           const running = !!(keys["ShiftLeft"] || keys["ShiftRight"]);
           const spd = running ? player.runSpeed : player.walkSpeed;
           player.state = running ? "run" : "walk";
 
-          const stepX = nx * spd * dt;
-          const stepY = ny * spd * dt;
+          const stepX = mx * spd * dt;
+          const stepY = my * spd * dt;
           if (!isCollidingAt(player.x + stepX, player.y)) player.x += stepX;
           if (!isCollidingAt(player.x, player.y + stepY)) player.y += stepY;
         } else {
@@ -975,71 +1002,78 @@
 
         updatePlayer(dt);
 
-        const zoom = 3.5;
+        const zoom = 1.55;
         ctx.imageSmoothingEnabled = false;
-        ctx.fillStyle = "#245ca8";
+        ctx.fillStyle = "#163b70";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         ctx.save();
         ctx.translate(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
         ctx.scale(zoom, zoom);
-        ctx.translate(-Math.round(player.x), -Math.round(player.y - 10));
+        ctx.translate(-Math.round(player.x), -Math.round(player.y - 24));
 
         const halfW = MAP_W / 2, halfH = MAP_H / 2;
-        const viewHalfW = Math.ceil(canvas.width / zoom / TILE / 2) + 2;
-        const viewHalfH = Math.ceil(canvas.height / zoom / TILE / 2) + 2;
-        const pTx = Math.floor(player.x / TILE);
-        const pTy = Math.floor(player.y / TILE);
+        const viewHalfX = (canvas.width / zoom / 2) + 128;
+        const viewHalfY = (canvas.height / zoom / 2) + 128;
 
-        const startX = Math.max(-halfW, pTx - viewHalfW);
-        const endX = Math.min(halfW, pTx + viewHalfW);
-        const startY = Math.max(-halfH, pTy - viewHalfH);
-        const endY = Math.min(halfH, pTy + viewHalfH);
+        // Back-to-front isometric painter's order (increasing tx + ty)
+        for (let ty = -halfH; ty < halfH; ty++) {
+          for (let tx = -halfW; tx < halfW; tx++) {
+            const iso = gridToIso(tx, ty);
+            if (
+              iso.x < player.x - viewHalfX || iso.x > player.x + viewHalfX ||
+              iso.y < player.y - viewHalfY || iso.y > player.y + viewHalfY
+            ) {
+              continue;
+            }
 
-        for (let ty = startY; ty < endY; ty++) {
-          for (let tx = startX; tx < endX; tx++) {
             const tile = groundGrid[ty + halfH][tx + halfW];
             let col = tile.col;
             if (tile.row === 0 && col < 12) {
               const base = Math.floor(col / 4) * 4;
               col = base + ((col + waterPhase) % 4);
             }
+
             ctx.drawImage(
               images.tileset,
-              col * TILE, tile.row * TILE, TILE, TILE,
-              tx * TILE, ty * TILE, TILE, TILE
+              col * TILE_W, tile.row * CELL_H, TILE_W, CELL_H,
+              iso.x - HALF_W, iso.y - HALF_H, TILE_W, CELL_H
             );
 
             const dec = decorGrid[ty + halfH][tx + halfW];
             if (dec) {
               ctx.drawImage(
                 images.tileset,
-                dec.col * TILE, dec.row * TILE, TILE, TILE,
-                tx * TILE, ty * TILE, TILE, TILE
+                dec.col * TILE_W, dec.row * CELL_H, TILE_W, CELL_H,
+                iso.x - HALF_W, iso.y - HALF_H, TILE_W, CELL_H
               );
             }
 
             if (debugCollisions && waterCells.has(`${tx},${ty}`)) {
+              ctx.beginPath();
+              ctx.moveTo(iso.x, iso.y - HALF_H);
+              ctx.lineTo(iso.x + HALF_W, iso.y);
+              ctx.lineTo(iso.x, iso.y + HALF_H);
+              ctx.lineTo(iso.x - HALF_W, iso.y);
+              ctx.closePath();
               ctx.fillStyle = "rgba(25, 145, 255, 0.34)";
-              ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
-              ctx.strokeStyle = "rgba(80, 220, 255, 0.85)";
-              ctx.lineWidth = 0.6;
-              ctx.strokeRect(tx * TILE + 0.3, ty * TILE + 0.3, TILE - 0.6, TILE - 0.6);
+              ctx.fill();
+              ctx.strokeStyle = "rgba(80, 225, 255, 0.9)";
+              ctx.lineWidth = 1.0;
+              ctx.stroke();
             }
           }
         }
 
-        if (debugCollisions) {
-          for (const rail of bridgeRailRects) {
-            ctx.fillStyle = "rgba(255, 165, 25, 0.55)";
-            ctx.fillRect(rail.x, rail.y, rail.w, rail.h);
-          }
-        }
-
-        // Y-Sort Render List (Objects + Player anchored at ground contact y)
+        // Y-Sort Render List (Objects + Traveler)
         const renderables = [];
         for (const obj of worldObjects) {
-          renderables.push({ kind: "obj", y: obj.y, obj });
+          if (
+            obj.x >= player.x - viewHalfX - 96 && obj.x <= player.x + viewHalfX + 96 &&
+            obj.y >= player.y - viewHalfY - 96 && obj.y <= player.y + viewHalfY + 180
+          ) {
+            renderables.push({ kind: "obj", y: obj.y, obj });
+          }
         }
         renderables.push({ kind: "player", y: player.y });
         renderables.sort((a, b) => a.y - b.y);
@@ -1054,7 +1088,7 @@
             const o = item.obj;
             const def = OBJECT_DEFS[o.type];
             const img = images[o.type];
-            const shakeX = o.shakeTime > 0 ? Math.sin(o.shakeTime * 90) * 1.8 : 0;
+            const shakeX = o.shakeTime > 0 ? Math.sin(o.shakeTime * 90) * 3.0 : 0;
             ctx.drawImage(
               img,
               Math.round(o.x - def.w / 2 + shakeX),
@@ -1066,40 +1100,39 @@
               ctx.fillStyle = "rgba(255, 65, 65, 0.45)";
               ctx.fillRect(rx, ry, def.colW, def.colH);
               ctx.strokeStyle = "rgba(255, 120, 50, 0.95)";
-              ctx.lineWidth = 0.8;
+              ctx.lineWidth = 1.2;
               ctx.strokeRect(rx, ry, def.colW, def.colH);
             }
           } else {
             ctx.drawImage(
               images.player,
-              sheetCol * 32, sheetRow * 32, 32, 32,
-              Math.round(player.x - 16), Math.round(player.y - 30), 32, 32
+              sheetCol * 96, sheetRow * 96, 96, 96,
+              Math.round(player.x - 48), Math.round(player.y - 86), 96, 96
             );
             if (debugCollisions) {
-              // Player 12x14 collision box centered at (player.x, player.y - 7)
               ctx.fillStyle = "rgba(0, 245, 255, 0.42)";
-              ctx.fillRect(player.x - 6, player.y - 14, 12, 14);
+              ctx.fillRect(player.x - 12, player.y - 16, 24, 16);
               ctx.strokeStyle = "#00ffff";
-              ctx.lineWidth = 0.9;
-              ctx.strokeRect(player.x - 6, player.y - 14, 12, 14);
+              ctx.lineWidth = 1.2;
+              ctx.strokeRect(player.x - 12, player.y - 16, 24, 16);
 
               const fv = DIR_VECTORS[player.facing];
               const fl = Math.hypot(fv.x, fv.y) || 1;
-              const tx = player.x + (fv.x / fl) * 18;
-              const ty = player.y - 7 + (fv.y / fl) * 18;
+              const tx = player.x + (fv.x / fl) * 38;
+              const ty = player.y - 8 + (fv.y / fl) * 38;
               ctx.beginPath();
-              ctx.moveTo(player.x, player.y - 7);
+              ctx.moveTo(player.x, player.y - 8);
               ctx.lineTo(tx, ty);
               ctx.strokeStyle = "#ffe53b";
-              ctx.lineWidth = 1.2;
+              ctx.lineWidth = 1.6;
               ctx.stroke();
 
               ctx.beginPath();
-              ctx.arc(tx, ty, 8.0, 0, Math.PI * 2);
-              ctx.fillStyle = "rgba(255, 110, 50, 0.35)";
+              ctx.arc(tx, ty, 16.0, 0, Math.PI * 2);
+              ctx.fillStyle = "rgba(255, 110, 50, 0.32)";
               ctx.fill();
               ctx.strokeStyle = "#ff7832";
-              ctx.lineWidth = 0.8;
+              ctx.lineWidth = 1.2;
               ctx.stroke();
             }
           }
@@ -1108,11 +1141,11 @@
         ctx.restore();
 
         prevCtx.imageSmoothingEnabled = false;
-        prevCtx.clearRect(0, 0, 32, 32);
+        prevCtx.clearRect(0, 0, 96, 96);
         prevCtx.drawImage(
           images.player,
-          sheetCol * 32, sheetRow * 32, 32, 32,
-          0, 0, 32, 32
+          sheetCol * 96, sheetRow * 96, 96, 96,
+          0, 0, 96, 96
         );
 
         requestAnimationFrame(loop);

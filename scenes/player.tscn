@@ -4,10 +4,10 @@
 [ext_resource type="Texture2D" path="res://assets/sprites/player_spritesheet.png" id="2_player_tex"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
-size = Vector2(12, 14)
+size = Vector2(24, 16)
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_interact"]
-radius = 9.0
+radius = 20.0
 
 [node name="Player" type="CharacterBody2D" groups=["player"]]
 y_sort_enabled = true
@@ -19,13 +19,13 @@ script = ExtResource("1_player_script")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 texture_filter = 1
-position = Vector2(0, -14)
+position = Vector2(0, -38)
 texture = ExtResource("2_player_tex")
 hframes = 6
 vframes = 56
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, -7)
+position = Vector2(0, -8)
 shape = SubResource("RectangleShape2D_body")
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
@@ -34,7 +34,7 @@ shape = SubResource("RectangleShape2D_body")
 anim_player = NodePath("../AnimationPlayer")
 
 [node name="InteractionArea" type="Area2D" parent="."]
-position = Vector2(0, 10)
+position = Vector2(0, 18)
 collision_layer = 0
 collision_mask = 4
 
@@ -42,7 +42,7 @@ collision_mask = 4
 shape = SubResource("CircleShape2D_interact")
 
 [node name="Camera2D" type="Camera2D" parent="."]
-position = Vector2(0, -10)
-zoom = Vector2(3.5, 3.5)
+position = Vector2(0, -24)
+zoom = Vector2(1.65, 1.65)
 position_smoothing_enabled = true
 position_smoothing_speed = 8.0
