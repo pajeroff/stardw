@@ -44,22 +44,22 @@ const DIRECTION_LABELS_RU: Dictionary = {
 	"down_left": "ЮЗ (Изометрия Вниз-Влево)",
 }
 
-# Animation table matching player_spritesheet.png (56 rows x 6 columns, 96x96 per frame)
+# Animation table matching player_spritesheet.png (56 rows x 8 columns, 96x96 per frame)
 const ANIM_CONFIG: Dictionary = {
-	"idle":     {"base_row": 0,  "frames": 4, "fps": 6.0,  "loop": true},
-	"walk":     {"base_row": 8,  "frames": 6, "fps": 10.0, "loop": true},
-	"run":      {"base_row": 16, "frames": 6, "fps": 15.0, "loop": true},
-	"axe":      {"base_row": 24, "frames": 6, "fps": 14.0, "loop": false},
-	"pickaxe":  {"base_row": 32, "frames": 6, "fps": 14.0, "loop": false},
-	"water":    {"base_row": 40, "frames": 6, "fps": 12.0, "loop": false},
-	"interact": {"base_row": 48, "frames": 4, "fps": 10.0, "loop": false},
+	"idle":     {"base_row": 0,  "frames": 8, "fps": 8.0,  "loop": true},
+	"walk":     {"base_row": 8,  "frames": 8, "fps": 12.0, "loop": true},
+	"run":      {"base_row": 16, "frames": 8, "fps": 16.0, "loop": true},
+	"axe":      {"base_row": 24, "frames": 8, "fps": 16.0, "loop": false},
+	"pickaxe":  {"base_row": 32, "frames": 8, "fps": 16.0, "loop": false},
+	"water":    {"base_row": 40, "frames": 8, "fps": 14.0, "loop": false},
+	"interact": {"base_row": 48, "frames": 8, "fps": 12.0, "loop": false},
 }
 
 const TOOLS: Array[Dictionary] = [
 	{"id": "axe",      "title": "Топор лесоруба"},
 	{"id": "pickaxe",  "title": "Кирка рудокопа"},
-	{"id": "water",    "title": "Фляга / Лейка"},
-	{"id": "interact", "title": "Посох странника (Сбор)"},
+	{"id": "water",    "title": "Походная лейка"},
+	{"id": "interact", "title": "Сбор / Осмотр (Рука)"},
 ]
 
 const DIAGONAL_GRACE_TIME: float = 0.065

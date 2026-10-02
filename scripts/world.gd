@@ -300,28 +300,37 @@ func generate_world(new_seed: int) -> void:
 				water_count += 1
 				continue
 
-			# Diverse Land Biomes (Cobblestone Road, Sand Shore, Slate Highland, Golden Birch Grove, Dark Forest Moss, Meadow)
+			# Diverse Land Biomes (Cobblestone Road, Sand Shore, Slate Highland, Sandstone Canyon, Cherry Blossom Lawn, Autumn Maple/Birch Grove, Dark Forest Moss, Meadow)
 			if path_lookup.has(cell):
 				ground_layer.set_cell(cell, 0, Vector2i(12 + variant, 1))
 			elif river_dist <= river_half_width + 1.3 or l1_dist < lake_1_radius + 1.5 or l2_dist < lake_2_radius + 1.5:
 				ground_layer.set_cell(cell, 0, Vector2i(variant, 1))
 				sand_lookup[cell] = true
-			elif ty < -9 and elev > 0.18:
-				# Slate rocky highland ground
-				ground_layer.set_cell(cell, 0, Vector2i(8 + variant, 2))
-			elif tx > int(river_base_x) + 3 and f_val > 0.0:
-				# Golden autumn birch grove grass
+			elif ty < -9 and elev > 0.14:
+				# Slate rocky highland or warm sandstone plateau
+				if tx < 0:
+					ground_layer.set_cell(cell, 0, Vector2i(8 + variant, 2))
+				else:
+					ground_layer.set_cell(cell, 0, Vector2i(4 + variant, 4))
+			elif ty > 7 and tx < int(river_base_x) - 2 and f_val > -0.05:
+				# Cherry blossom spring lawn (row 4, cols 0..3)
+				ground_layer.set_cell(cell, 0, Vector2i(variant, 4))
+			elif tx > int(river_base_x) + 3 and f_val > -0.02:
+				# Golden/crimson autumn maple & birch grove grass (row 2, cols 12..15)
 				ground_layer.set_cell(cell, 0, Vector2i(12 + variant, 2))
 			elif f_val > 0.08 or elev > 0.18:
-				# Dark emerald forest moss floor
+				# Dark emerald forest moss floor (row 1, cols 8..11)
 				ground_layer.set_cell(cell, 0, Vector2i(8 + variant, 1))
+			elif f_val < -0.15:
+				# Lush clover meadow (row 4, cols 8..11)
+				ground_layer.set_cell(cell, 0, Vector2i(8 + variant, 4))
 			else:
-				# Lush sunlit meadow grass
+				# Sunlit meadow grass (row 1, cols 4..7)
 				ground_layer.set_cell(cell, 0, Vector2i(4 + variant, 1))
 
 	_rebuild_water_physics_bodies()
 
-	# Pass 2: Place High-Res AI Trees (Oak, Pine, Birch, Weeping Willow), Rocks (Boulder, Slate, Ore, Small) & Props
+	# Pass 2: Place All 17 Smooth World Object Varieties (7 Trees, 7 Rocks, 3 Props)
 	var occupied_cells: Dictionary = {}
 
 	for ty in range(y_min + 3, y_max - 3):
@@ -348,36 +357,60 @@ func generate_world(new_seed: int) -> void:
 			var roll: float = rng.randf()
 
 			if not _has_neighbor_in_dict(occupied_cells, cell, 2):
-				# Weeping Willows near riverbanks & lake shores!
-				if near_water_ring and roll < 0.22:
-					_spawn_world_object("tree_willow", cell)
+				# Weeping Willows & Mossy River Rocks near riverbanks & lake shores!
+				if near_water_ring and roll < 0.25:
+					if roll < 0.17:
+						_spawn_world_object("tree_willow", cell)
+						tree_count += 1
+					else:
+						_spawn_world_object("rock_river", cell)
+						rock_count += 1
 					occupied_cells[cell] = true
-					tree_count += 1
 					continue
-				elif not sand_lookup.has(cell) and f_val > 0.05 and roll < 0.34:
+				elif not sand_lookup.has(cell) and f_val > 0.03 and roll < 0.36:
 					var tree_kind: String = "tree_oak"
-					if ty < -7 or elev > 0.24:
-						tree_kind = "tree_pine"
+					if ty < -7 or elev > 0.22:
+						tree_kind = "tree_pine" if (tx + ty) % 2 == 0 else "tree_cedar"
 					elif tx > int(river_base_x) + 3:
-						tree_kind = "tree_birch" if (tx + ty) % 2 == 0 else "tree_oak"
+						var m_mod: int = posmod(tx * 3 + ty * 5, 3)
+						if m_mod == 0:
+							tree_kind = "tree_maple"
+						elif m_mod == 1:
+							tree_kind = "tree_birch"
+						else:
+							tree_kind = "tree_oak"
+					elif ty > 6:
+						tree_kind = "tree_cherry" if (tx + ty) % 2 == 0 else "tree_oak"
+					else:
+						var f_mod: int = posmod(tx + ty * 2, 4)
+						if f_mod == 0:
+							tree_kind = "tree_cedar"
+						elif f_mod == 1:
+							tree_kind = "tree_cherry"
+						else:
+							tree_kind = "tree_oak"
 					_spawn_world_object(tree_kind, cell)
 					occupied_cells[cell] = true
 					tree_count += 1
 					continue
-				elif not sand_lookup.has(cell) and f_val > -0.05 and roll < 0.055:
-					var prop_kind: String = "bush_berry" if rng.randf() < 0.70 else "log_fallen"
+				elif not sand_lookup.has(cell) and f_val > -0.05 and roll < 0.06:
+					var prop_kind: String = "bush_berry" if rng.randf() < 0.65 else ("log_fallen" if rng.randf() < 0.7 else "tree_stump")
 					_spawn_world_object(prop_kind, cell)
 					occupied_cells[cell] = true
 					tree_count += 1
 					continue
-				elif (elev > 0.12 or ty < -8 or tx > int(river_base_x) + 5) and roll > 0.91:
+				elif (elev > 0.08 or ty < -7 or tx > int(river_base_x) + 4) and roll > 0.88:
 					var r_roll: float = rng.randf()
 					var rock_kind: String = "rock_small"
-					if r_roll < 0.28:
-						rock_kind = "rock_slate" if ty < -4 else "rock_large"
-					elif r_roll < 0.56:
+					if r_roll < 0.18:
+						rock_kind = "rock_crystal"
+					elif r_roll < 0.36:
 						rock_kind = "rock_ore"
-					elif r_roll < 0.78:
+					elif r_roll < 0.54:
+						rock_kind = "rock_sandstone" if tx > 0 else "rock_slate"
+					elif r_roll < 0.72:
+						rock_kind = "rock_river"
+					elif r_roll < 0.88:
 						rock_kind = "rock_large"
 					_spawn_world_object(rock_kind, cell)
 					occupied_cells[cell] = true
@@ -447,7 +480,7 @@ func _on_player_tool_used(tool_id: String, target_global_pos: Vector2, _facing_d
 		var local_pos: Vector2 = ground_layer.to_local(target_global_pos)
 		var cell: Vector2i = ground_layer.local_to_map(local_pos)
 		var atlas_coords: Vector2i = ground_layer.get_cell_atlas_coords(cell)
-		if atlas_coords.y == 1 or (atlas_coords.y == 2 and atlas_coords.x >= 8):
+		if atlas_coords.y == 1 or (atlas_coords.y == 2 and atlas_coords.x >= 8) or atlas_coords.y == 4:
 			var variant: int = posmod(cell.x + cell.y, 4)
 			ground_layer.set_cell(cell, 0, Vector2i(4 + variant, 2))
 			if decor_layer.get_cell_source_id(cell) == -1:
