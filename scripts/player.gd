@@ -151,7 +151,7 @@ func _physics_process(delta: float) -> void:
 		# Trigger world hit / interaction at ~55% of swing animation
 		if not action_hit_triggered and action_timer >= action_duration * 0.52:
 			action_hit_triggered = true
-			var reach_pos: Vector2 = global_position + Vector2(0, 6) + facing_vector.normalized() * 16.0
+			var reach_pos: Vector2 = global_position + Vector2(0, -7) + facing_vector.normalized() * 18.0
 			tool_used.emit(active_action_id, reach_pos, facing_vector.normalized())
 
 		if action_timer >= action_duration:
@@ -234,7 +234,7 @@ static func vector_to_direction_name(vec: Vector2) -> String:
 
 func _update_interaction_transform() -> void:
 	if interaction_area:
-		interaction_area.position = Vector2(0, 6) + facing_vector.normalized() * 14.0
+		interaction_area.position = Vector2(0, -7) + facing_vector.normalized() * 18.0
 
 
 func _play_8dir_animation(state_name: String, dir_name: String) -> void:
@@ -337,12 +337,13 @@ func set_debug_draw(enabled: bool) -> void:
 func _draw() -> void:
 	if not debug_draw_enabled:
 		return
-	# Draw feet collision circle
-	draw_circle(Vector2(0, 10), 5.0, Color(0.1, 0.95, 1.0, 0.42))
-	draw_arc(Vector2(0, 10), 5.0, 0.0, TAU, 24, Color(0.0, 1.0, 1.0, 0.95), 1.2)
+	# Draw player body collision rectangle (12x14 centered at (0, -7))
+	var col_rect := Rect2(Vector2(-6, -14), Vector2(12, 14))
+	draw_rect(col_rect, Color(0.1, 0.95, 1.0, 0.42), true)
+	draw_rect(col_rect, Color(0.0, 1.0, 1.0, 0.95), false, 1.2)
 	# Draw 8-direction vector arrow & interaction hitbox
-	var origin := Vector2(0, 6)
-	var tip: Vector2 = origin + facing_vector.normalized() * 16.0
+	var origin := Vector2(0, -7)
+	var tip: Vector2 = origin + facing_vector.normalized() * 18.0
 	draw_line(origin, tip, Color(1.0, 0.9, 0.2, 0.95), 1.5)
-	draw_circle(tip, 5.5, Color(1.0, 0.35, 0.2, 0.35))
-	draw_arc(tip, 5.5, 0.0, TAU, 20, Color(1.0, 0.45, 0.2, 0.9), 1.0)
+	draw_circle(tip, 8.0, Color(1.0, 0.35, 0.2, 0.35))
+	draw_arc(tip, 8.0, 0.0, TAU, 20, Color(1.0, 0.45, 0.2, 0.9), 1.0)

@@ -48,7 +48,7 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 12px 14px;
-      max-width: 520px;
+      max-width: 540px;
       backdrop-filter: blur(6px);
       box-shadow: 0 8px 24px rgba(0,0,0,0.45);
       font-size: 13px;
@@ -357,7 +357,6 @@
     };
     const TOOLS = ["axe", "pickaxe", "water", "interact"];
 
-    // Load exact PNG assets generated for the Godot 4.7 project
     const images = {};
     const imageList = [
       ["player", "/assets/sprites/player_spritesheet.png"],
@@ -384,7 +383,6 @@
       images[key] = img;
     });
 
-    // Deterministic 2D noise matching Godot's FastNoiseLite feel
     function hash2D(x, y, seed) {
       let n = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 1442695041);
       n = (n ^ (n >>> 13)) >>> 0;
@@ -413,32 +411,32 @@
       return val / maxAmp;
     }
 
-    const MAP_W = 80, MAP_H = 60, TILE = 16;
+    const MAP_W = 88, MAP_H = 68, TILE = 16;
     let worldSeed = 20261002;
     let groundGrid = [];
     let decorGrid = [];
     let waterCells = new Set();
+    let bridgeRailRects = [];
     let worldObjects = [];
     let debugCollisions = false;
     let inventory = { wood: 0, stone: 0, berry: 0, watered: 0 };
 
+    // Exact same ground-anchored collision definitions as scripts/world_object.gd
     const OBJECT_DEFS = {
-      tree_oak:   { w: 32, h: 48, offY: -16, colW: 10, colH: 8, colOffY: 2, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
-      tree_pine:  { w: 32, h: 48, offY: -16, colW: 9,  colH: 8, colOffY: 2, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
-      tree_birch: { w: 32, h: 48, offY: -16, colW: 9,  colH: 8, colOffY: 2, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
-      tree_stump: { w: 16, h: 16, offY: -2,  colW: 9,  colH: 6, colOffY: 1, hp: 2, tool: "axe", drop: "wood", amt: 1, stump: false },
-      log_fallen: { w: 32, h: 16, offY: -2,  colW: 24, colH: 7, colOffY: 0, hp: 2, tool: "axe", drop: "wood", amt: 2, stump: false },
-      bush_berry: { w: 16, h: 16, offY: -2,  colW: 11, colH: 8, colOffY: 1, hp: 1, tool: "any", drop: "berry", amt: 2, stump: false },
-      rock_large: { w: 32, h: 32, offY: -6,  colW: 20, colH: 11, colOffY: 1, hp: 4, tool: "pickaxe", drop: "stone", amt: 4, stump: false },
-      rock_small: { w: 16, h: 16, offY: -2,  colW: 11, colH: 7, colOffY: 1, hp: 2, tool: "pickaxe", drop: "stone", amt: 2, stump: false },
-      rock_ore:   { w: 16, h: 16, offY: -2,  colW: 11, colH: 7, colOffY: 1, hp: 3, tool: "pickaxe", drop: "stone", amt: 3, stump: false }
+      tree_oak:   { w: 32, h: 48, offY: -18, colW: 16, colH: 16, colOffY: -5, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_pine:  { w: 32, h: 48, offY: -18, colW: 16, colH: 16, colOffY: -5, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_birch: { w: 32, h: 48, offY: -18, colW: 15, colH: 16, colOffY: -5, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_stump: { w: 16, h: 16, offY: -4,  colW: 12, colH: 10, colOffY: -2, hp: 2, tool: "axe", drop: "wood", amt: 1, stump: false },
+      log_fallen: { w: 32, h: 16, offY: -4,  colW: 28, colH: 11, colOffY: -3, hp: 2, tool: "axe", drop: "wood", amt: 2, stump: false },
+      bush_berry: { w: 16, h: 16, offY: -4,  colW: 14, colH: 12, colOffY: -3, hp: 1, tool: "any", drop: "berry", amt: 2, stump: false },
+      rock_large: { w: 32, h: 32, offY: -8,  colW: 24, colH: 18, colOffY: -5, hp: 4, tool: "pickaxe", drop: "stone", amt: 4, stump: false },
+      rock_small: { w: 16, h: 16, offY: -4,  colW: 14, colH: 12, colOffY: -3, hp: 2, tool: "pickaxe", drop: "stone", amt: 2, stump: false },
+      rock_ore:   { w: 16, h: 16, offY: -4,  colW: 14, colH: 12, colOffY: -3, hp: 3, tool: "pickaxe", drop: "stone", amt: 3, stump: false }
     };
 
     const player = {
       x: 0,
       y: 0,
-      vx: 0,
-      vy: 0,
       walkSpeed: 95,
       runSpeed: 165,
       facing: "down",
@@ -474,114 +472,191 @@
       keys[e.code] = false;
     });
 
+    function getRiverCenterX(ty, baseX, bridgeYs, seed, phase) {
+      let rawOffset = Math.sin(ty * 0.11 + phase) * 4.5 + fbm(ty * 0.025, 0, seed + 1013, 2) * 4.0;
+      for (const by of bridgeYs) {
+        const distY = Math.abs(ty - (by + 0.5));
+        if (distY < 5.0) {
+          const targetOffset = Math.round(Math.sin(by * 0.11 + phase) * 4.5 + fbm(by * 0.025, 0, seed + 1013, 2) * 4.0);
+          const t = Math.max(0, Math.min(1, distY / 5.0));
+          const smoothT = t * t * (3 - 2 * t);
+          rawOffset = targetOffset + (rawOffset - targetOffset) * smoothT;
+        }
+      }
+      return baseX + rawOffset;
+    }
+
+    function hasNeighborInSet(set, tx, ty, radius) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (set.has(`${tx + dx},${ty + dy}`)) return true;
+        }
+      }
+      return false;
+    }
+
     function generateWorld(seed) {
       worldSeed = seed;
       document.getElementById("seed-badge").textContent = `Сид: ${worldSeed}`;
       groundGrid = [];
       decorGrid = [];
       waterCells.clear();
+      bridgeRailRects = [];
       worldObjects = [];
 
       const halfW = MAP_W / 2, halfH = MAP_H / 2;
-      const occupied = new Set();
+      const riverBaseX = (seed % 2 === 0) ? 13.0 : 11.0;
+      const riverPhase = hash2D(seed, 17, seed) * Math.PI * 2;
+      const riverHalfWidth = 2.0;
+      const bridgeYs = [-18, 0, 18];
+
+      const lake1Center = { x: -24.0 + (hash2D(1, 2, seed) - 0.5) * 4, y: -14.0 + (hash2D(3, 4, seed) - 0.5) * 4 };
+      const lake1Radius = 8.2;
+      const lake2Center = { x: -22.0 + (hash2D(5, 6, seed) - 0.5) * 4, y: 15.0 + (hash2D(7, 8, seed) - 0.5) * 4 };
+      const lake2Radius = 7.2;
+
+      const bridgeLookup = new Set();
+      const pathLookup = new Set();
+      const sandLookup = new Set();
+      const bridgeSpans = [];
+
+      for (const by of bridgeYs) {
+        const rcx = Math.round(getRiverCenterX(by, riverBaseX, bridgeYs, seed, riverPhase));
+        const bxStart = rcx - 3;
+        const bxEnd = rcx + 3;
+        bridgeSpans.push({ by, x0: bxStart, x1: bxEnd, rcx });
+        for (let ty = by; ty < by + 2; ty++) {
+          for (let tx = bxStart; tx <= bxEnd; tx++) {
+            bridgeLookup.add(`${tx},${ty}`);
+          }
+        }
+        const waterX0 = (rcx - 2) * TILE;
+        const waterW = 5 * TILE;
+        bridgeRailRects.push({ x: waterX0, y: by * TILE, w: waterW, h: 2 });
+        bridgeRailRects.push({ x: waterX0, y: (by + 2) * TILE - 2, w: waterW, h: 2 });
+      }
+
+      for (const span of bridgeSpans) {
+        for (let tx = -1; tx < span.x0; tx++) {
+          pathLookup.add(`${tx},${span.by}`);
+          pathLookup.add(`${tx},${span.by + 1}`);
+        }
+        for (let tx = span.x1 + 1; tx < span.x1 + 7; tx++) {
+          pathLookup.add(`${tx},${span.by}`);
+          pathLookup.add(`${tx},${span.by + 1}`);
+        }
+      }
+      for (let ty = bridgeYs[0]; ty < bridgeYs[2] + 2; ty++) {
+        pathLookup.add(`-1,${ty}`);
+        pathLookup.add(`0,${ty}`);
+      }
+      for (let py = -2; py <= 2; py++) {
+        for (let px = -2; px <= 2; px++) {
+          if (Math.hypot(px, py) <= 2.4) pathLookup.add(`${px},${py}`);
+        }
+      }
 
       for (let ty = -halfH; ty < halfH; ty++) {
         const row = [];
         const dRow = [];
+        const rcx = getRiverCenterX(ty, riverBaseX, bridgeYs, seed, riverPhase);
         for (let tx = -halfW; tx < halfW; tx++) {
-          const dist = Math.hypot(tx, ty);
-          let elev = fbm(tx * 0.045, ty * 0.045, seed, 3);
-          let rVal = Math.abs(fbm(tx * 0.032, ty * 0.032, seed + 1013, 2));
-          let fVal = fbm(tx * 0.075, ty * 0.075, seed + 4099, 2);
-
-          if (dist < 6.0) {
-            const b = (6.0 - dist) / 6.0;
-            elev = Math.max(elev, 0.12 * b);
-            rVal = Math.max(rVal, 0.14 * b);
-          }
-
-          const isRiver = rVal < 0.058;
-          const isDeepLake = elev < -0.27;
-          const isShallowLake = elev < -0.14;
-          const isWater = isRiver || isDeepLake || isShallowLake;
-
-          const onNsTrail = Math.abs(tx - Math.round(Math.sin(ty * 0.12) * 2)) <= 1;
-          const onEwTrail = Math.abs(ty - Math.round(Math.cos(tx * 0.12) * 2)) <= 1;
-          const isTrail = onNsTrail || onEwTrail;
+          const key = `${tx},${ty}`;
           const variant = ((tx * 7 + ty * 13) % 4 + 4) % 4;
 
-          let cellTile = { col: 4 + variant, row: 1 };
-          let dTile = null;
-
-          if (isWater) {
-            if (isTrail && (isRiver || !isDeepLake)) {
-              const bCol = onEwTrail ? (variant % 2) : (2 + (variant % 2));
-              cellTile = { col: bCol, row: 2 };
-            } else {
-              let wCol = variant;
-              if (isDeepLake) wCol = variant;
-              else if (isRiver) wCol = 8 + variant;
-              else wCol = (hash2D(tx, ty, seed + 77) < 0.14) ? (12 + variant) : (4 + variant);
-              cellTile = { col: wCol, row: 0 };
-              waterCells.add(`${tx},${ty}`);
-            }
-          } else {
-            if (isTrail) {
-              cellTile = { col: 12 + variant, row: 1 };
-            } else if (elev < -0.05 || rVal < 0.088) {
-              cellTile = { col: variant, row: 1 };
-            } else if (fVal > 0.12 || elev > 0.22) {
-              cellTile = { col: 8 + variant, row: 1 };
-            } else {
-              cellTile = { col: 4 + variant, row: 1 };
-            }
-
-            // Spawn objects or ground decor
-            const roll = hash2D(tx, ty, seed + 999);
-            if (!isTrail && dist >= 3.5 && Math.abs(tx) < halfW - 2 && Math.abs(ty) < halfH - 2) {
-              let hasNeighbor = false;
-              for (let oy = -1; oy <= 1; oy++) {
-                for (let ox = -1; ox <= 1; ox++) {
-                  if (occupied.has(`${tx + ox},${ty + oy}`) || waterCells.has(`${tx + ox},${ty + oy}`)) {
-                    hasNeighbor = true;
-                  }
-                }
-              }
-              if (!hasNeighbor) {
-                if (fVal > 0.12 && roll < 0.28) {
-                  const kind = elev > 0.26 ? "tree_pine" : (fVal > 0.36 && (tx + ty) % 2 === 0 ? "tree_birch" : "tree_oak");
-                  spawnObject(kind, tx, ty);
-                  occupied.add(`${tx},${ty}`);
-                } else if (fVal > 0.04 && roll > 0.28 && roll < 0.33) {
-                  spawnObject(roll < 0.31 ? "bush_berry" : "log_fallen", tx, ty);
-                  occupied.add(`${tx},${ty}`);
-                } else if (elev > 0.15 && roll > 0.92) {
-                  const rKind = roll > 0.97 ? "rock_large" : (roll > 0.945 ? "rock_ore" : "rock_small");
-                  spawnObject(rKind, tx, ty);
-                  occupied.add(`${tx},${ty}`);
-                }
-              }
-            }
-
-            if (!occupied.has(`${tx},${ty}`) && !isTrail && hash2D(tx, ty, seed + 555) < 0.14) {
-              const dv = Math.floor(hash2D(tx, ty, seed + 333) * 4) % 4;
-              if (fVal > 0.18) dTile = { col: 8 + dv, row: 3 };
-              else if (elev < 0.0) dTile = { col: 12 + dv, row: 3 };
-              else dTile = { col: (hash2D(tx, ty, seed + 111) < 0.55 ? dv : 4 + dv), row: 3 };
-            }
+          if (bridgeLookup.has(key)) {
+            row.push({ col: variant % 2, row: 2 });
+            dRow.push(null);
+            continue;
           }
 
-          row.push(cellTile);
-          dRow.push(dTile);
+          const elev = fbm(tx * 0.035, ty * 0.035, seed, 3);
+          const fVal = fbm(tx * 0.052, ty * 0.052, seed + 4099, 2);
+
+          const riverDist = Math.abs(tx - rcx);
+          const isRiver = riverDist <= riverHalfWidth;
+
+          const l1Dist = Math.hypot(tx - lake1Center.x, ty - lake1Center.y) + elev * 2.4;
+          const l2Dist = Math.hypot(tx - lake2Center.x, ty - lake2Center.y) + elev * 2.2;
+          const isLake1 = l1Dist < lake1Radius;
+          const isLake2 = l2Dist < lake2Radius;
+          const isDeepLake = (l1Dist < lake1Radius * 0.56) || (l2Dist < lake2Radius * 0.56);
+          const isLake = isLake1 || isLake2;
+
+          if (isRiver || isLake) {
+            let wCol = variant;
+            if (isDeepLake) wCol = variant;
+            else if (isRiver) wCol = 8 + variant;
+            else wCol = (hash2D(tx, ty, seed + 77) < 0.16) ? (12 + variant) : (4 + variant);
+            row.push({ col: wCol, row: 0 });
+            dRow.push(null);
+            waterCells.add(key);
+            continue;
+          }
+
+          if (pathLookup.has(key)) {
+            row.push({ col: 12 + variant, row: 1 });
+          } else if (riverDist <= riverHalfWidth + 1.4 || l1Dist < lake1Radius + 1.8 || l2Dist < lake2Radius + 1.8) {
+            row.push({ col: variant, row: 1 });
+            sandLookup.add(key);
+          } else if (fVal > 0.08 || elev > 0.20) {
+            row.push({ col: 8 + variant, row: 1 });
+          } else {
+            row.push({ col: 4 + variant, row: 1 });
+          }
+          dRow.push(null);
         }
         groundGrid.push(row);
         decorGrid.push(dRow);
       }
 
+      // Pass 2: Place Forest Objects & Decor with strict clearance zones
+      const occupied = new Set();
+      for (let ty = -halfH + 3; ty < halfH - 3; ty++) {
+        for (let tx = -halfW + 3; tx < halfW - 3; tx++) {
+          const key = `${tx},${ty}`;
+          if (waterCells.has(key) || bridgeLookup.has(key) || pathLookup.has(key) || sandLookup.has(key)) continue;
+          if (Math.hypot(tx, ty) < 5.0) continue;
+          if (hasNeighborInSet(waterCells, tx, ty, 2)) continue;
+          if (hasNeighborInSet(bridgeLookup, tx, ty, 3)) continue;
+          if (hasNeighborInSet(pathLookup, tx, ty, 1)) continue;
+
+          const elev = fbm(tx * 0.035, ty * 0.035, seed, 3);
+          const fVal = fbm(tx * 0.052, ty * 0.052, seed + 4099, 2);
+          const roll = hash2D(tx, ty, seed + 999);
+
+          if (!hasNeighborInSet(occupied, tx, ty, 2)) {
+            if (fVal > 0.06 && roll < 0.34) {
+              let kind = "tree_oak";
+              if (ty < -8 || elev > 0.26) kind = "tree_pine";
+              else if (tx > riverBaseX + 3) kind = ((tx + ty) % 2 === 0) ? "tree_birch" : "tree_oak";
+              spawnObject(kind, tx, ty);
+              occupied.add(key);
+              continue;
+            } else if (fVal > -0.05 && roll > 0.34 && roll < 0.39) {
+              spawnObject(roll < 0.375 ? "bush_berry" : "log_fallen", tx, ty);
+              occupied.add(key);
+              continue;
+            } else if ((elev > 0.14 || tx > riverBaseX + 6) && roll > 0.93) {
+              const rKind = roll > 0.975 ? "rock_large" : (roll > 0.95 ? "rock_ore" : "rock_small");
+              spawnObject(rKind, tx, ty);
+              occupied.add(key);
+              continue;
+            }
+          }
+
+          if (!occupied.has(key) && hash2D(tx, ty, seed + 555) < 0.13) {
+            const dv = Math.floor(hash2D(tx, ty, seed + 333) * 4) % 4;
+            decorGrid[ty + halfH][tx + halfW] = {
+              col: (fVal > 0.16 && hash2D(tx, ty, seed + 222) < 0.42) ? (8 + dv) : (hash2D(tx, ty, seed + 111) < 0.55 ? dv : 4 + dv),
+              row: 3
+            };
+          }
+        }
+      }
+
       player.x = 0;
       player.y = 0;
-      player.vx = 0;
-      player.vy = 0;
     }
 
     function spawnObject(type, tx, ty) {
@@ -636,12 +711,12 @@
     function applyToolHit(toolId) {
       const fVec = DIR_VECTORS[player.facing];
       const len = Math.hypot(fVec.x, fVec.y) || 1;
-      const hitX = player.x + (fVec.x / len) * 16;
-      const hitY = player.y + 6 + (fVec.y / len) * 16;
+      const hitX = player.x + (fVec.x / len) * 18;
+      const hitY = player.y - 7 + (fVec.y / len) * 18;
 
-      let bestObj = null, bestDist = 20;
+      let bestObj = null, bestDist = 22;
       for (const obj of worldObjects) {
-        const d = Math.hypot(obj.x - hitX, obj.y - hitY);
+        const d = Math.hypot(obj.x - hitX, (obj.y - 5) - hitY);
         if (d < bestDist) {
           bestDist = d;
           bestObj = obj;
@@ -685,46 +760,50 @@
       }
     }
 
-    function circleRectCollide(cx, cy, cr, rx, ry, rw, rh) {
-      const closestX = Math.max(rx, Math.min(cx, rx + rw));
-      const closestY = Math.max(ry, Math.min(cy, ry + rh));
-      const dx = cx - closestX;
-      const dy = cy - closestY;
-      return (dx * dx + dy * dy) < (cr * cr);
+    function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
     }
 
     function isCollidingAt(px, py) {
-      const feetX = px;
-      const feetY = py + 10;
-      const radius = 5.0;
+      // Player AABB: 12x14 centered at (px, py - 7) -> [px - 6..px + 6, py - 14..py]
+      const pLeft = px - 6;
+      const pTop = py - 14;
+      const pW = 12;
+      const pH = 14;
 
-      // Map borders
       const maxW = (MAP_W / 2) * TILE - 8;
       const maxH = (MAP_H / 2) * TILE - 8;
-      if (feetX < -maxW || feetX > maxW || feetY < -maxH || feetY > maxH) return true;
+      if (pLeft < -maxW || pLeft + pW > maxW || pTop < -maxH || pTop + pH > maxH) return true;
 
-      // Check water tiles around feet
-      const minTx = Math.floor((feetX - radius) / TILE);
-      const maxTx = Math.floor((feetX + radius) / TILE);
-      const minTy = Math.floor((feetY - radius) / TILE);
-      const maxTy = Math.floor((feetY + radius) / TILE);
+      // Water tiles collision
+      const minTx = Math.floor(pLeft / TILE);
+      const maxTx = Math.floor((pLeft + pW - 0.001) / TILE);
+      const minTy = Math.floor(pTop / TILE);
+      const maxTy = Math.floor((pTop + pH - 0.001) / TILE);
 
       for (let ty = minTy; ty <= maxTy; ty++) {
         for (let tx = minTx; tx <= maxTx; tx++) {
           if (waterCells.has(`${tx},${ty}`)) {
-            if (circleRectCollide(feetX, feetY, radius, tx * TILE, ty * TILE, TILE, TILE)) {
+            if (rectsOverlap(pLeft, pTop, pW, pH, tx * TILE, ty * TILE, TILE, TILE)) {
               return true;
             }
           }
         }
       }
 
-      // Check world objects
+      // Bridge guardrails collision
+      for (const rail of bridgeRailRects) {
+        if (rectsOverlap(pLeft, pTop, pW, pH, rail.x, rail.y, rail.w, rail.h)) {
+          return true;
+        }
+      }
+
+      // World objects collision (Trees, Rocks, Bushes, Logs, Stumps)
       for (const obj of worldObjects) {
         const def = OBJECT_DEFS[obj.type];
         const rx = obj.x - def.colW / 2;
         const ry = obj.y + def.colOffY - def.colH / 2;
-        if (circleRectCollide(feetX, feetY, radius, rx, ry, def.colW, def.colH)) {
+        if (rectsOverlap(pLeft, pTop, pW, pH, rx, ry, def.colW, def.colH)) {
           return true;
         }
       }
@@ -904,7 +983,7 @@
         ctx.save();
         ctx.translate(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
         ctx.scale(zoom, zoom);
-        ctx.translate(-Math.round(player.x), -Math.round(player.y));
+        ctx.translate(-Math.round(player.x), -Math.round(player.y - 10));
 
         const halfW = MAP_W / 2, halfH = MAP_H / 2;
         const viewHalfW = Math.ceil(canvas.width / zoom / TILE / 2) + 2;
@@ -917,7 +996,6 @@
         const startY = Math.max(-halfH, pTy - viewHalfH);
         const endY = Math.min(halfH, pTy + viewHalfH);
 
-        // Draw Ground & Decor Tiles
         for (let ty = startY; ty < endY; ty++) {
           for (let tx = startX; tx < endX; tx++) {
             const tile = groundGrid[ty + halfH][tx + halfW];
@@ -942,21 +1020,28 @@
             }
 
             if (debugCollisions && waterCells.has(`${tx},${ty}`)) {
-              ctx.fillStyle = "rgba(25, 145, 255, 0.30)";
+              ctx.fillStyle = "rgba(25, 145, 255, 0.34)";
               ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
-              ctx.strokeStyle = "rgba(80, 220, 255, 0.8)";
+              ctx.strokeStyle = "rgba(80, 220, 255, 0.85)";
               ctx.lineWidth = 0.6;
               ctx.strokeRect(tx * TILE + 0.3, ty * TILE + 0.3, TILE - 0.6, TILE - 0.6);
             }
           }
         }
 
-        // Y-Sort Render List (Objects + Player)
+        if (debugCollisions) {
+          for (const rail of bridgeRailRects) {
+            ctx.fillStyle = "rgba(255, 165, 25, 0.55)";
+            ctx.fillRect(rail.x, rail.y, rail.w, rail.h);
+          }
+        }
+
+        // Y-Sort Render List (Objects + Player anchored at ground contact y)
         const renderables = [];
         for (const obj of worldObjects) {
           renderables.push({ kind: "obj", y: obj.y, obj });
         }
-        renderables.push({ kind: "player", y: player.y + 8 });
+        renderables.push({ kind: "player", y: player.y });
         renderables.sort((a, b) => a.y - b.y);
 
         const cfg = ANIM_CONFIG[player.state] || ANIM_CONFIG.idle;
@@ -978,7 +1063,7 @@
             if (debugCollisions) {
               const rx = o.x - def.colW / 2;
               const ry = o.y + def.colOffY - def.colH / 2;
-              ctx.fillStyle = "rgba(255, 65, 65, 0.42)";
+              ctx.fillStyle = "rgba(255, 65, 65, 0.45)";
               ctx.fillRect(rx, ry, def.colW, def.colH);
               ctx.strokeStyle = "rgba(255, 120, 50, 0.95)";
               ctx.lineWidth = 0.8;
@@ -988,32 +1073,29 @@
             ctx.drawImage(
               images.player,
               sheetCol * 32, sheetRow * 32, 32, 32,
-              Math.round(player.x - 16), Math.round(player.y - 18), 32, 32
+              Math.round(player.x - 16), Math.round(player.y - 30), 32, 32
             );
             if (debugCollisions) {
-              // Feet collision circle
-              ctx.beginPath();
-              ctx.arc(player.x, player.y + 10, 5.0, 0, Math.PI * 2);
-              ctx.fillStyle = "rgba(0, 245, 255, 0.4)";
-              ctx.fill();
+              // Player 12x14 collision box centered at (player.x, player.y - 7)
+              ctx.fillStyle = "rgba(0, 245, 255, 0.42)";
+              ctx.fillRect(player.x - 6, player.y - 14, 12, 14);
               ctx.strokeStyle = "#00ffff";
               ctx.lineWidth = 0.9;
-              ctx.stroke();
+              ctx.strokeRect(player.x - 6, player.y - 14, 12, 14);
 
-              // 8-direction ray & tool hitbox
               const fv = DIR_VECTORS[player.facing];
               const fl = Math.hypot(fv.x, fv.y) || 1;
-              const tx = player.x + (fv.x / fl) * 16;
-              const ty = player.y + 6 + (fv.y / fl) * 16;
+              const tx = player.x + (fv.x / fl) * 18;
+              const ty = player.y - 7 + (fv.y / fl) * 18;
               ctx.beginPath();
-              ctx.moveTo(player.x, player.y + 6);
+              ctx.moveTo(player.x, player.y - 7);
               ctx.lineTo(tx, ty);
               ctx.strokeStyle = "#ffe53b";
               ctx.lineWidth = 1.2;
               ctx.stroke();
 
               ctx.beginPath();
-              ctx.arc(tx, ty, 5.5, 0, Math.PI * 2);
+              ctx.arc(tx, ty, 8.0, 0, Math.PI * 2);
               ctx.fillStyle = "rgba(255, 110, 50, 0.35)";
               ctx.fill();
               ctx.strokeStyle = "#ff7832";
@@ -1025,7 +1107,6 @@
 
         ctx.restore();
 
-        // Update Sidebar 32x32 Character Inspector
         prevCtx.imageSmoothingEnabled = false;
         prevCtx.clearRect(0, 0, 32, 32);
         prevCtx.drawImage(

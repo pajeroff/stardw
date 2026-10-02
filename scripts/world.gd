@@ -13,6 +13,7 @@ const WORLD_OBJECT_SCENE: PackedScene = preload("res://scenes/world_object.tscn"
 
 @onready var ground_layer: TileMapLayer = $GroundLayer
 @onready var decor_layer: TileMapLayer = $DecorLayer
+@onready var water_body: StaticBody2D = $WaterBody
 @onready var y_sort_root: Node2D = $YSortRoot
 @onready var objects_container: Node2D = $YSortRoot/ObjectsContainer
 @onready var player: Player = $YSortRoot/Player
@@ -21,6 +22,7 @@ const WORLD_OBJECT_SCENE: PackedScene = preload("res://scenes/world_object.tscn"
 
 var tile_set_resource: TileSet
 var water_cells: Array[Vector2i] = []
+var bridge_rail_rects: Array[Rect2] = []
 var debug_collisions: bool = false
 var _water_anim_timer: float = 0.0
 var _water_anim_phase: int = 0
@@ -54,7 +56,6 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	# Animate water ripples on river & lake tiles
 	_water_anim_timer += delta
 	if _water_anim_timer >= 0.55:
 		_water_anim_timer = 0.0
@@ -94,6 +95,10 @@ func _build_tileset_with_collisions() -> void:
 	source.texture = atlas_tex
 	source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
 
+	# IMPORTANT: Attach source to TileSet BEFORE creating tiles & adding collision polygons
+	# so TileData knows physics_layer 0 exists!
+	tile_set_resource.add_source(source, 0)
+
 	var cols: int = 16
 	var rows: int = 5
 	var full_tile_poly := PackedVector2Array([
@@ -109,12 +114,9 @@ func _build_tileset_with_collisions() -> void:
 			source.create_tile(coords)
 			var tile_data: TileData = source.get_tile_data(coords, 0)
 			# Row 0 contains all water tiles (Deep lake, Shallow lake, River, Lilypads)
-			# Give them solid physics collision on Physics Layer 0!
-			if ry == 0:
+			if ry == 0 and tile_data:
 				tile_data.add_collision_polygon(0)
 				tile_data.set_collision_polygon_points(0, 0, full_tile_poly)
-
-	tile_set_resource.add_source(source, 0)
 
 
 func _setup_map_borders() -> void:
@@ -141,185 +143,286 @@ func _setup_map_borders() -> void:
 		border_body.add_child(shape_node)
 
 
-func generate_world(new_seed: int) -> void:
-	world_seed = new_seed
-	ground_layer.clear()
-	decor_layer.clear()
-	water_cells.clear()
-
-	for child in objects_container.get_children():
+func _rebuild_water_physics_bodies(water_lookup: Dictionary) -> void:
+	for child in water_body.get_children():
 		child.queue_free()
-
-	# Configure 3 FastNoiseLite layers for Lakes, Rivers, and Forest Biomes
-	var elev_noise := FastNoiseLite.new()
-	elev_noise.seed = world_seed
-	elev_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	elev_noise.frequency = 0.032
-	elev_noise.fractal_octaves = 3
-
-	var river_noise := FastNoiseLite.new()
-	river_noise.seed = world_seed + 1013
-	river_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	river_noise.frequency = 0.021
-	river_noise.fractal_octaves = 2
-
-	var forest_noise := FastNoiseLite.new()
-	forest_noise.seed = world_seed + 4099
-	forest_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	forest_noise.frequency = 0.055
-	forest_noise.fractal_octaves = 2
-
-	var rng := RandomNumberGenerator.new()
-	rng.seed = world_seed
 
 	var x_min: int = -map_width / 2
 	var x_max: int = map_width / 2
 	var y_min: int = -map_height / 2
 	var y_max: int = map_height / 2
 
+	# Merge contiguous horizontal water cells into clean RectangleShape2D strips
+	for ty in range(y_min, y_max):
+		var run_start: int = -999999
+		var run_len: int = 0
+		for tx in range(x_min, x_max + 1):
+			var is_w: bool = (tx < x_max) and water_lookup.has(Vector2i(tx, ty))
+			if is_w:
+				if run_len == 0:
+					run_start = tx
+				run_len += 1
+			else:
+				if run_len > 0:
+					var rect_shape := RectangleShape2D.new()
+					rect_shape.size = Vector2(float(run_len * TILE_SIZE), float(TILE_SIZE))
+					var col_node := CollisionShape2D.new()
+					col_node.shape = rect_shape
+					var start_local: Vector2 = ground_layer.map_to_local(Vector2i(run_start, ty))
+					var center_x: float = start_local.x + float(run_len - 1) * float(TILE_SIZE) * 0.5
+					col_node.position = Vector2(center_x, start_local.y)
+					water_body.add_child(col_node)
+					run_len = 0
+
+	# Also add thin top & bottom guardrails along bridges so player stays safely on the bridge deck
+	for rail_rect in bridge_rail_rects:
+		var r_shape := RectangleShape2D.new()
+		r_shape.size = rail_rect.size
+		var c_node := CollisionShape2D.new()
+		c_node.shape = r_shape
+		c_node.position = rail_rect.position + rail_rect.size * 0.5
+		water_body.add_child(c_node)
+
+
+func _get_river_center_x(ty: int, base_x: float, bridge_ys: Array[int], river_noise: FastNoiseLite, phase: float) -> float:
+	var raw_offset: float = sin(float(ty) * 0.11 + phase) * 4.5 + river_noise.get_noise_1d(float(ty)) * 4.0
+	# Flatten river curvature smoothly near bridge crossings so bridges sit perpendicular to straight banks
+	for by in bridge_ys:
+		var dist_y: float = absf(float(ty) - (float(by) + 0.5))
+		if dist_y < 5.0:
+			var target_offset: float = roundf(sin(float(by) * 0.11 + phase) * 4.5 + river_noise.get_noise_1d(float(by)) * 4.0)
+			var t: float = clampf(dist_y / 5.0, 0.0, 1.0)
+			var smooth_t: float = t * t * (3.0 - 2.0 * t)
+			raw_offset = lerpf(target_offset, raw_offset, smooth_t)
+	return base_x + raw_offset
+
+
+func generate_world(new_seed: int) -> void:
+	world_seed = new_seed
+	ground_layer.clear()
+	decor_layer.clear()
+	water_cells.clear()
+	bridge_rail_rects.clear()
+
+	for child in objects_container.get_children():
+		child.queue_free()
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = world_seed
+
+	var elev_noise := FastNoiseLite.new()
+	elev_noise.seed = world_seed
+	elev_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	elev_noise.frequency = 0.035
+	elev_noise.fractal_octaves = 3
+
+	var river_noise := FastNoiseLite.new()
+	river_noise.seed = world_seed + 1013
+	river_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	river_noise.frequency = 0.025
+	river_noise.fractal_octaves = 2
+
+	var forest_noise := FastNoiseLite.new()
+	forest_noise.seed = world_seed + 4099
+	forest_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	forest_noise.frequency = 0.052
+	forest_noise.fractal_octaves = 2
+
+	var x_min: int = -map_width / 2
+	var x_max: int = map_width / 2
+	var y_min: int = -map_height / 2
+	var y_max: int = map_height / 2
+
+	# 1. River layout: flows North-to-South on the East side of spawn (x ~ +13)
+	var river_base_x: float = 13.0 if (world_seed % 2 == 0) else 11.0
+	var river_phase: float = rng.randf_range(0.0, TAU)
+	var river_half_width: float = 2.0
+	var bridge_ys: Array[int] = [-18, 0, 18]
+
+	# 2. Scenic Lakes (placed in West quadrants, away from river, roads, and spawn)
+	var lake_1_center := Vector2(-24.0 + rng.randf_range(-2.0, 2.0), -14.0 + rng.randf_range(-2.0, 2.0))
+	var lake_1_radius: float = 8.2
+	var lake_2_center := Vector2(-22.0 + rng.randf_range(-2.0, 2.0), 15.0 + rng.randf_range(-2.0, 2.0))
+	var lake_2_radius: float = 7.2
+
+	var water_lookup: Dictionary = {}
+	var bridge_lookup: Dictionary = {}
+	var path_lookup: Dictionary = {}
+	var sand_lookup: Dictionary = {}
+
 	var tree_count: int = 0
 	var rock_count: int = 0
 	var water_count: int = 0
 	var bridge_count: int = 0
 
-	# Track occupied cells for object placement
-	var water_lookup: Dictionary = {}
-	var bridge_lookup: Dictionary = {}
-	var path_lookup: Dictionary = {}
+	# Precompute straight wooden bridges across the 3 river crossings
+	var bridge_spans: Array[Dictionary] = []
+	for by in bridge_ys:
+		var rcx: int = int(roundf(_get_river_center_x(by, river_base_x, bridge_ys, river_noise, river_phase)))
+		var bx_start: int = rcx - 3  # 1 full tile onto West dry bank
+		var bx_end: int = rcx + 3    # 1 full tile onto East dry bank
+		bridge_spans.append({"by": by, "x0": bx_start, "x1": bx_end, "rcx": rcx})
+		for ty in range(by, by + 2):
+			for tx in range(bx_start, bx_end + 1):
+				bridge_lookup[Vector2i(tx, ty)] = true
 
-	# Pass 1: Generate Ground & Water & Bridges
+		# Add thin top & bottom guardrail collision rects over the water portion of the bridge
+		var water_x0: float = float(rcx - 2) * float(TILE_SIZE)
+		var water_w: float = 5.0 * float(TILE_SIZE)
+		var top_y: float = float(by) * float(TILE_SIZE)
+		var bot_y: float = float(by + 2) * float(TILE_SIZE) - 2.0
+		bridge_rail_rects.append(Rect2(Vector2(water_x0, top_y), Vector2(water_w, 2.0)))
+		bridge_rail_rects.append(Rect2(Vector2(water_x0, bot_y), Vector2(water_w, 2.0)))
+
+	# Precompute clean 2-tile-wide dirt trails connecting spawn (0,0) and all 3 bridges
+	for span in bridge_spans:
+		var by: int = span["by"]
+		var bx0: int = span["x0"]
+		var bx1: int = span["x1"]
+		# Horizontal road from West trunk road (x = -1..0) to West bridge entrance (bx0 - 1)
+		for tx in range(-1, bx0):
+			path_lookup[Vector2i(tx, by)] = true
+			path_lookup[Vector2i(tx, by + 1)] = true
+		# Horizontal road from East bridge exit (bx1 + 1) to East forest road (bx1 + 6)
+		for tx in range(bx1 + 1, bx1 + 7):
+			path_lookup[Vector2i(tx, by)] = true
+			path_lookup[Vector2i(tx, by + 1)] = true
+
+	# Vertical West trunk road connecting North bridge (-18) through Spawn (0) to South bridge (+18)
+	for ty in range(bridge_ys[0], bridge_ys[2] + 2):
+		path_lookup[Vector2i(-1, ty)] = true
+		path_lookup[Vector2i(0, ty)] = true
+
+	# Small cozy cobblestone/dirt plaza at Spawn (0,0)
+	for py in range(-2, 3):
+		for px in range(-2, 3):
+			if Vector2(px, py).length() <= 2.4:
+				path_lookup[Vector2i(px, py)] = true
+
+	# Pass 1: Place Ground, Lakes, River, Bridges, and Roads
 	for ty in range(y_min, y_max):
+		var rcx: float = _get_river_center_x(ty, river_base_x, bridge_ys, river_noise, river_phase)
 		for tx in range(x_min, x_max):
 			var cell := Vector2i(tx, ty)
-			var dist_from_spawn: float = Vector2(tx, ty).length()
-			var elev: float = elev_noise.get_noise_2d(float(tx), float(ty))
-			var r_val: float = absf(river_noise.get_noise_2d(float(tx), float(ty)))
-			var f_val: float = forest_noise.get_noise_2d(float(tx), float(ty))
-
-			# Keep spawn area around (0,0) dry land
-			if dist_from_spawn < 6.0:
-				var spawn_blend: float = clampf((6.0 - dist_from_spawn) / 6.0, 0.0, 1.0)
-				elev = maxf(elev, 0.08 * spawn_blend)
-				r_val = maxf(r_val, 0.12 * spawn_blend)
-
-			var is_river: bool = (r_val < 0.058)
-			var is_deep_lake: bool = (elev < -0.28)
-			var is_shallow_lake: bool = (elev < -0.15)
-			var is_water: bool = is_river or is_deep_lake or is_shallow_lake
-
-			# Winding main paths along X and Y axes near center so bridges cross rivers
-			var on_ns_trail: bool = abs(tx - int(round(sin(float(ty) * 0.12) * 2.0))) <= 1
-			var on_ew_trail: bool = abs(ty - int(round(cos(float(tx) * 0.12) * 2.0))) <= 1
-			var is_trail: bool = on_ns_trail or on_ew_trail
-
 			var variant: int = posmod(tx * 7 + ty * 13, 4)
 
-			if is_water:
-				# Place wooden bridges where trails cross rivers or narrow water!
-				if is_trail and (is_river or not is_deep_lake):
-					var bridge_col: int = (variant % 2) if on_ew_trail else (2 + (variant % 2))
-					ground_layer.set_cell(cell, 0, Vector2i(bridge_col, 2))
-					bridge_lookup[cell] = true
-					bridge_count += 1
+			# If this cell is part of a precomputed wooden bridge:
+			if bridge_lookup.has(cell):
+				ground_layer.set_cell(cell, 0, Vector2i(variant % 2, 2))
+				bridge_count += 1
+				continue
+
+			var elev: float = elev_noise.get_noise_2d(float(tx), float(ty))
+			var f_val: float = forest_noise.get_noise_2d(float(tx), float(ty))
+
+			# Distance to River centerline
+			var river_dist: float = absf(float(tx) - rcx)
+			var is_river: bool = river_dist <= river_half_width
+
+			# Distance to Scenic Lakes (perturbed organically by elevation noise)
+			var l1_dist: float = (Vector2(tx, ty) - lake_1_center).length() + elev * 2.4
+			var l2_dist: float = (Vector2(tx, ty) - lake_2_center).length() + elev * 2.2
+			var is_lake_1: bool = l1_dist < lake_1_radius
+			var is_lake_2: bool = l2_dist < lake_2_radius
+			var is_deep_lake: bool = (l1_dist < lake_1_radius * 0.56) or (l2_dist < lake_2_radius * 0.56)
+			var is_lake: bool = is_lake_1 or is_lake_2
+
+			if is_river or is_lake:
+				var water_col: int = variant
+				if is_deep_lake:
+					water_col = variant  # Cols 0..3: Deep Lake Water
+				elif is_river:
+					water_col = 8 + variant  # Cols 8..11: Flowing River Water
 				else:
-					var water_col: int = variant
-					if is_deep_lake:
-						water_col = variant  # Cols 0..3: Deep Water
-					elif is_river:
-						water_col = 8 + variant  # Cols 8..11: River Water
+					# Shallow lake rim with occasional lilypads
+					if rng.randf() < 0.16:
+						water_col = 12 + variant  # Cols 12..15: Lilypads
 					else:
-						# Shallow lake water or lilypad
-						if rng.randf() < 0.14:
-							water_col = 12 + variant  # Cols 12..15: Lilypads
-						else:
-							water_col = 4 + variant  # Cols 4..7: Shallow Water
+						water_col = 4 + variant   # Cols 4..7: Shallow Water
 
-					ground_layer.set_cell(cell, 0, Vector2i(water_col, 0))
-					water_cells.append(cell)
-					water_lookup[cell] = water_col
-					water_count += 1
+				ground_layer.set_cell(cell, 0, Vector2i(water_col, 0))
+				water_cells.append(cell)
+				water_lookup[cell] = water_col
+				water_count += 1
+				continue
+
+			# Dry Land Tiles
+			if path_lookup.has(cell):
+				ground_layer.set_cell(cell, 0, Vector2i(12 + variant, 1))
+			elif river_dist <= river_half_width + 1.4 or l1_dist < lake_1_radius + 1.8 or l2_dist < lake_2_radius + 1.8:
+				# Natural sandy beach / riverbank
+				ground_layer.set_cell(cell, 0, Vector2i(variant, 1))
+				sand_lookup[cell] = true
+			elif f_val > 0.08 or elev > 0.20:
+				# Rich dark forest moss grass
+				ground_layer.set_cell(cell, 0, Vector2i(8 + variant, 1))
 			else:
-				# Land biomes
-				if is_trail:
-					ground_layer.set_cell(cell, 0, Vector2i(12 + variant, 1))  # Dirt path
-					path_lookup[cell] = true
-				elif elev < -0.06 or r_val < 0.088:
-					# Sandy beach / riverbank
-					ground_layer.set_cell(cell, 0, Vector2i(variant, 1))
-				elif f_val > 0.12 or elev > 0.22:
-					# Rich dark forest floor
-					ground_layer.set_cell(cell, 0, Vector2i(8 + variant, 1))
-				else:
-					# Lush meadow grass
-					ground_layer.set_cell(cell, 0, Vector2i(4 + variant, 1))
+				# Lush meadow grass
+				ground_layer.set_cell(cell, 0, Vector2i(4 + variant, 1))
 
-	# Pass 2: Populate Decor & Collidable Forest/Rock Objects
+	# Build solid physics collision shapes for all water tiles & bridge rails
+	_rebuild_water_physics_bodies(water_lookup)
+
+	# Pass 2: Place Forest Trees, Rocks, Berry Bushes, Logs & Decor with Strict Buffer Zones
 	var occupied_cells: Dictionary = {}
 
-	for ty in range(y_min + 2, y_max - 2):
-		for tx in range(x_min + 2, x_max - 2):
+	for ty in range(y_min + 3, y_max - 3):
+		for tx in range(x_min + 3, x_max - 3):
 			var cell := Vector2i(tx, ty)
-			if water_lookup.has(cell) or bridge_lookup.has(cell) or path_lookup.has(cell):
+
+			# Never place on water, bridges, roads, or sand beaches
+			if water_lookup.has(cell) or bridge_lookup.has(cell) or path_lookup.has(cell) or sand_lookup.has(cell):
 				continue
 
-			var dist_from_spawn: float = Vector2(tx, ty).length()
-			if dist_from_spawn < 3.5:
+			# Keep spawn area around (0, 0) open
+			if Vector2(tx, ty).length() < 5.0:
 				continue
 
-			# Check if adjacent to water so we keep shorelines mostly passable
-			var near_water: bool = false
-			for oy in range(-1, 2):
-				for ox in range(-1, 2):
-					if water_lookup.has(Vector2i(tx + ox, ty + oy)):
-						near_water = true
-						break
+			# Keep 2-tile clearance from water, 3-tile clearance from bridges, 1-tile clearance from roads
+			if _has_neighbor_in_dict(water_lookup, cell, 2):
+				continue
+			if _has_neighbor_in_dict(bridge_lookup, cell, 3):
+				continue
+			if _has_neighbor_in_dict(path_lookup, cell, 1):
+				continue
 
 			var elev: float = elev_noise.get_noise_2d(float(tx), float(ty))
 			var f_val: float = forest_noise.get_noise_2d(float(tx), float(ty))
 			var roll: float = rng.randf()
 
-			# Forest trees in forest biomes (with spacing check so player can walk through groves)
-			if not near_water and not _has_neighbor_in_dict(occupied_cells, cell, 1):
-				if f_val > 0.15 and roll < 0.30:
+			# Check 2-tile spacing between solid objects so trees/rocks never overlap or jam together
+			if not _has_neighbor_in_dict(occupied_cells, cell, 2):
+				# Forest Groves (clustered by biome region)
+				if f_val > 0.06 and roll < 0.34:
 					var tree_kind: String = "tree_oak"
-					if elev > 0.28:
+					if ty < -8 or elev > 0.26:
 						tree_kind = "tree_pine"
-					elif f_val > 0.42:
+					elif tx > int(river_base_x) + 3:
 						tree_kind = "tree_birch" if (tx + ty) % 2 == 0 else "tree_oak"
 					_spawn_world_object(tree_kind, cell)
 					occupied_cells[cell] = true
 					tree_count += 1
 					continue
-				elif f_val > 0.05 and roll < 0.045:
-					var sub_kind: String = "bush_berry" if rng.randf() < 0.65 else "log_fallen"
-					_spawn_world_object(sub_kind, cell)
+				elif f_val > -0.05 and roll < 0.05:
+					var bush_or_log: String = "bush_berry" if rng.randf() < 0.72 else "log_fallen"
+					_spawn_world_object(bush_or_log, cell)
 					occupied_cells[cell] = true
 					tree_count += 1
 					continue
-				elif elev > 0.18 and roll > 0.93:
-					var rock_kind: String = "rock_large" if rng.randf() < 0.35 else ("rock_ore" if rng.randf() < 0.45 else "rock_small")
+				elif (elev > 0.14 or tx > int(river_base_x) + 6) and roll > 0.93:
+					var rock_kind: String = "rock_large" if rng.randf() < 0.32 else ("rock_ore" if rng.randf() < 0.45 else "rock_small")
 					_spawn_world_object(rock_kind, cell)
 					occupied_cells[cell] = true
 					rock_count += 1
 					continue
-				elif near_water and roll < 0.04:
-					_spawn_world_object("rock_small", cell)
-					occupied_cells[cell] = true
-					rock_count += 1
-					continue
 
-			# Ground decor (flowers, tall grass, mushrooms, pebbles) - non-colliding
-			if rng.randf() < 0.14:
+			# Non-colliding ground decor (wildflowers, tall grass, mushrooms, pebbles)
+			if not occupied_cells.has(cell) and rng.randf() < 0.13:
 				var d_var: int = rng.randi_range(0, 3)
-				if f_val > 0.20:
-					# Forest mushrooms or tall grass
-					var d_col: int = (8 + d_var) if rng.randf() < 0.45 else (4 + d_var)
+				if f_val > 0.16:
+					var d_col: int = (8 + d_var) if rng.randf() < 0.42 else (4 + d_var)
 					decor_layer.set_cell(cell, 0, Vector2i(d_col, 3))
-				elif elev < 0.0:
-					# Shore pebbles
-					decor_layer.set_cell(cell, 0, Vector2i(12 + d_var, 3))
 				else:
-					# Meadow wildflowers or grass tufts
 					var d_col: int = d_var if rng.randf() < 0.55 else (4 + d_var)
 					decor_layer.set_cell(cell, 0, Vector2i(d_col, 3))
 
@@ -335,7 +438,7 @@ func generate_world(new_seed: int) -> void:
 		"trees": tree_count,
 		"rocks": rock_count,
 		"water_tiles": water_count,
-		"bridges": bridge_count,
+		"bridges": bridge_spans.size(),
 	})
 
 
@@ -357,13 +460,13 @@ func _spawn_world_object(kind: String, cell: Vector2i) -> void:
 
 
 func _on_player_tool_used(tool_id: String, target_global_pos: Vector2, _facing_dir: Vector2) -> void:
-	# 1. Check for interactive WorldObjects within reach
 	var closest_obj: WorldObject = null
-	var best_dist: float = 20.0
+	var best_dist: float = 22.0
 
 	for child in objects_container.get_children():
 		if child is WorldObject:
-			var d: float = child.global_position.distance_to(target_global_pos)
+			var obj_center: Vector2 = child.global_position + Vector2(0, -5)
+			var d: float = obj_center.distance_to(target_global_pos)
 			if d < best_dist:
 				best_dist = d
 				closest_obj = child
@@ -372,12 +475,10 @@ func _on_player_tool_used(tool_id: String, target_global_pos: Vector2, _facing_d
 		closest_obj.apply_tool_hit(tool_id)
 		return
 
-	# 2. If using Watering Can on ground tile, water the soil & sprout flowers!
 	if tool_id == "water":
 		var local_pos: Vector2 = ground_layer.to_local(target_global_pos)
 		var cell: Vector2i = ground_layer.local_to_map(local_pos)
 		var atlas_coords: Vector2i = ground_layer.get_cell_atlas_coords(cell)
-		# Only water land tiles (Row 1: sand/grass/forest/dirt)
 		if atlas_coords.y == 1:
 			var variant: int = posmod(cell.x + cell.y, 4)
 			ground_layer.set_cell(cell, 0, Vector2i(4 + variant, 2))
