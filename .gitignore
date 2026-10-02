@@ -1,0 +1,8 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# Ignored OS / Python files
+.DS_Store
+__pycache__/
+*.pyc

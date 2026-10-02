@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stardw — Godot 4.7 Pixel-Art Interactive Preview</title>
+  <style>
+    :root {
+      --bg: #151922;
+      --panel: rgba(22, 27, 38, 0.92);
+      --border: #2e384d;
+      --accent: #63c777;
+      --gold: #f5d04c;
+      --text: #eef2f8;
+      --muted: #9aa6bc;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+    }
+    #game-wrap {
+      position: relative;
+      flex: 1;
+      height: 100vh;
+      overflow: hidden;
+      background: #1d4e89;
+    }
+    canvas#world-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      cursor: crosshair;
+    }
+    /* Top-left HUD */
+    .hud-top {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      max-width: 520px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .hud-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--accent);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .badge {
+      background: #253146;
+      color: var(--gold);
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .res-bar {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+      color: var(--gold);
+      font-weight: 600;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .btn-row {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button.btn {
+      background: #263247;
+      color: var(--text);
+      border: 1px solid #3a4a68;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    button.btn:hover {
+      background: #32435f;
+      border-color: var(--accent);
+    }
+    button.btn.active {
+      background: #254b37;
+      border-color: var(--accent);
+      color: #a6f4b5;
+    }
+    /* Bottom Hotbar */
+    .hotbar {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .slot {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background: #1d2433;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .slot.selected {
+      border-color: var(--gold);
+      background: #283349;
+    }
+    .slot img {
+      width: 24px;
+      height: 24px;
+      image-rendering: pixelated;
+    }
+    /* Right sidebar inspector */
+    #sidebar {
+      width: 310px;
+      background: #171c26;
+      border-left: 1px solid var(--border);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+    .card {
+      background: #1e2533;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 10px 12px;
+    }
+    .card h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .preview-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    #char-preview-canvas {
+      width: 96px;
+      height: 96px;
+      background: #263042;
+      border: 1px solid #394761;
+      border-radius: 8px;
+      image-rendering: pixelated;
+    }
+    .compass-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+      margin-top: 6px;
+    }
+    .compass-btn {
+      padding: 5px 4px;
+      font-size: 11px;
+      text-align: center;
+      background: #252f42;
+      border: 1px solid #35435c;
+      border-radius: 5px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .compass-btn.active {
+      background: #2b583f;
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 700;
+    }
+    .anim-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 5px;
+    }
+    .asset-thumbs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .asset-thumbs img {
+      background: #263042;
+      border: 1px solid #36445e;
+      border-radius: 5px;
+      padding: 3px;
+      image-rendering: pixelated;
+      height: 40px;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-wrap">
+    <canvas id="world-canvas"></canvas>
+
+    <div class="hud-top">
+      <div class="hud-title">
+        <span>Stardw — Godot 4.7 (Интерактивное превью)</span>
+        <span class="badge" id="seed-badge">Сид: 20261002</span>
+      </div>
+      <div id="state-line">Анимация: <b>idle_down</b> | Направление: <b>Вниз (Ю)</b></div>
+      <div style="color: var(--muted); font-size: 12px; margin-top: 2px;">
+        <b>WASD / Стрелки</b> — ходьба (8 осей) &bull; <b>Shift</b> — бег &bull; <b>Пробел / ЛКМ</b> — инструмент &bull; <b>E</b> — действие
+      </div>
+      <div class="res-bar">
+        <span>🪵 Дерево: <b id="res-wood">0</b></span>
+        <span>🪨 Камень: <b id="res-stone">0</b></span>
+        <span>🍒 Ягоды: <b id="res-berry">0</b></span>
+        <span>💧 Полито: <b id="res-water">0</b></span>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-regen">🎲 [R] Новый сид мира</button>
+        <button class="btn" id="btn-debug">🛡️ [C] Показать коллизии</button>
+      </div>
+    </div>
+
+    <div class="hotbar" id="hotbar">
+      <div class="slot selected" data-tool="0">
+        <img src="/assets/ui/icon_axe.png" alt="Axe" />
+        <span>[1] Топор</span>
+      </div>
+      <div class="slot" data-tool="1">
+        <img src="/assets/ui/icon_pickaxe.png" alt="Pickaxe" />
+        <span>[2] Кирка</span>
+      </div>
+      <div class="slot" data-tool="2">
+        <img src="/assets/ui/icon_water.png" alt="Water" />
+        <span>[3] Лейка</span>
+      </div>
+      <div class="slot" data-tool="3">
+        <img src="/assets/ui/icon_hand.png" alt="Hand" />
+        <span>[4] Рука</span>
+      </div>
+    </div>
+  </div>
+
+  <aside id="sidebar">
+    <div class="card">
+      <h3>Инспектор 8 осей и анимаций</h3>
+      <div class="preview-box">
+        <canvas id="char-preview-canvas" width="32" height="32"></canvas>
+        <div style="font-size: 12px; line-height: 1.5;">
+          <div>Спрайт: <b>32×32 px</b></div>
+          <div>Лист: <b>56 рядов × 6 кадров</b></div>
+          <div>Тайлы: <b>16×16 px</b></div>
+          <div id="inspector-frame" style="color: var(--gold);">Кадр: 0</div>
+        </div>
+      </div>
+      <div class="compass-grid" id="compass-grid">
+        <button class="compass-btn" data-dir="up_left">↖ СЗ (up_left)</button>
+        <button class="compass-btn" data-dir="up">↑ С (up)</button>
+        <button class="compass-btn" data-dir="up_right">↗ СВ (up_right)</button>
+        <button class="compass-btn" data-dir="left">← З (left)</button>
+        <button class="compass-btn" style="cursor:default;opacity:0.5;">8 ОСЕЙ</button>
+        <button class="compass-btn" data-dir="right">→ В (right)</button>
+        <button class="compass-btn" data-dir="down_left">↙ ЮЗ (down_left)</button>
+        <button class="compass-btn active" data-dir="down">↓ Ю (down)</button>
+        <button class="compass-btn" data-dir="down_right">↘ ЮВ (down_right)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Тест анимаций (7 состояний)</h3>
+      <div class="anim-grid" id="anim-grid">
+        <button class="btn active" data-anim="idle">Покой (idle)</button>
+        <button class="btn" data-anim="walk">Ходьба (walk)</button>
+        <button class="btn" data-anim="run">Бег (run)</button>
+        <button class="btn" data-anim="axe">Топор (axe)</button>
+        <button class="btn" data-anim="pickaxe">Кирка (pickaxe)</button>
+        <button class="btn" data-anim="water">Полив (water)</button>
+        <button class="btn" data-anim="interact">Действие (E)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Сгенерированные ассеты мира</h3>
+      <div class="asset-thumbs">
+        <img src="/assets/objects/tree_oak.png" title="Дуб (tree_oak.png)" />
+        <img src="/assets/objects/tree_pine.png" title="Ель (tree_pine.png)" />
+        <img src="/assets/objects/tree_birch.png" title="Берёза (tree_birch.png)" />
+        <img src="/assets/objects/rock_large.png" title="Валун (rock_large.png)" />
+        <img src="/assets/objects/rock_ore.png" title="Руда (rock_ore.png)" />
+        <img src="/assets/objects/bush_berry.png" title="Куст ягод (bush_berry.png)" />
+        <img src="/assets/objects/log_fallen.png" title="Бревно (log_fallen.png)" />
+        <img src="/assets/objects/tree_stump.png" title="Пень (tree_stump.png)" />
+      </div>
+    </div>
+  </aside>
+
+  <script>
+    const DIRECTIONS = [
+      "down", "down_right", "right", "up_right",
+      "up", "up_left", "left", "down_left"
+    ];
+    const DIR_VECTORS = {
+      down: {x: 0, y: 1},
+      down_right: {x: 1, y: 1},
+      right: {x: 1, y: 0},
+      up_right: {x: 1, y: -1},
+      up: {x: 0, y: -1},
+      up_left: {x: -1, y: -1},
+      left: {x: -1, y: 0},
+      down_left: {x: -1, y: 1}
+    };
+    const DIR_LABELS_RU = {
+      down: "Вниз (Ю)",
+      down_right: "Вниз-Вправо (ЮВ)",
+      right: "Вправо (В)",
+      up_right: "Вверх-Вправо (СВ)",
+      up: "Вверх (С)",
+      up_left: "Вверх-Влево (СЗ)",
+      left: "Влево (З)",
+      down_left: "Вниз-Влево (ЮЗ)"
+    };
+    const ANIM_CONFIG = {
+      idle:     { baseRow: 0,  frames: 4, fps: 6,  loop: true },
+      walk:     { baseRow: 8,  frames: 6, fps: 10, loop: true },
+      run:      { baseRow: 16, frames: 6, fps: 15, loop: true },
+      axe:      { baseRow: 24, frames: 6, fps: 14, loop: false },
+      pickaxe:  { baseRow: 32, frames: 6, fps: 14, loop: false },
+      water:    { baseRow: 40, frames: 6, fps: 12, loop: false },
+      interact: { baseRow: 48, frames: 4, fps: 10, loop: false }
+    };
+    const TOOLS = ["axe", "pickaxe", "water", "interact"];
+
+    // Load exact PNG assets generated for the Godot 4.7 project
+    const images = {};
+    const imageList = [
+      ["player", "/assets/sprites/player_spritesheet.png"],
+      ["tileset", "/assets/tilesets/world_tileset.png"],
+      ["tree_oak", "/assets/objects/tree_oak.png"],
+      ["tree_pine", "/assets/objects/tree_pine.png"],
+      ["tree_birch", "/assets/objects/tree_birch.png"],
+      ["tree_stump", "/assets/objects/tree_stump.png"],
+      ["bush_berry", "/assets/objects/bush_berry.png"],
+      ["rock_large", "/assets/objects/rock_large.png"],
+      ["rock_small", "/assets/objects/rock_small.png"],
+      ["rock_ore", "/assets/objects/rock_ore.png"],
+      ["log_fallen", "/assets/objects/log_fallen.png"]
+    ];
+
+    let loadedCount = 0;
+    imageList.forEach(([key, src]) => {
+      const img = new Image();
+      img.onload = () => {
+        loadedCount++;
+        if (loadedCount === imageList.length) initGame();
+      };
+      img.src = src;
+      images[key] = img;
+    });
+
+    // Deterministic 2D noise matching Godot's FastNoiseLite feel
+    function hash2D(x, y, seed) {
+      let n = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 1442695041);
+      n = (n ^ (n >>> 13)) >>> 0;
+      n = Math.imul(n, 1274126177) >>> 0;
+      return ((n ^ (n >>> 16)) >>> 0) / 4294967295.0;
+    }
+    function smoothNoise(x, y, seed) {
+      const xi = Math.floor(x), yi = Math.floor(y);
+      const xf = x - xi, yf = y - yi;
+      const u = xf * xf * (3 - 2 * xf);
+      const v = yf * yf * (3 - 2 * yf);
+      const a = hash2D(xi, yi, seed);
+      const b = hash2D(xi + 1, yi, seed);
+      const c = hash2D(xi, yi + 1, seed);
+      const d = hash2D(xi + 1, yi + 1, seed);
+      return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+    }
+    function fbm(x, y, seed, octaves = 3) {
+      let val = 0, amp = 0.5, freq = 1, maxAmp = 0;
+      for (let i = 0; i < octaves; i++) {
+        val += (smoothNoise(x * freq, y * freq, seed + i * 313) * 2 - 1) * amp;
+        maxAmp += amp;
+        amp *= 0.5;
+        freq *= 2.0;
+      }
+      return val / maxAmp;
+    }
+
+    const MAP_W = 80, MAP_H = 60, TILE = 16;
+    let worldSeed = 20261002;
+    let groundGrid = [];
+    let decorGrid = [];
+    let waterCells = new Set();
+    let worldObjects = [];
+    let debugCollisions = false;
+    let inventory = { wood: 0, stone: 0, berry: 0, watered: 0 };
+
+    const OBJECT_DEFS = {
+      tree_oak:   { w: 32, h: 48, offY: -16, colW: 10, colH: 8, colOffY: 2, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_pine:  { w: 32, h: 48, offY: -16, colW: 9,  colH: 8, colOffY: 2, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_birch: { w: 32, h: 48, offY: -16, colW: 9,  colH: 8, colOffY: 2, hp: 3, tool: "axe", drop: "wood", amt: 3, stump: true },
+      tree_stump: { w: 16, h: 16, offY: -2,  colW: 9,  colH: 6, colOffY: 1, hp: 2, tool: "axe", drop: "wood", amt: 1, stump: false },
+      log_fallen: { w: 32, h: 16, offY: -2,  colW: 24, colH: 7, colOffY: 0, hp: 2, tool: "axe", drop: "wood", amt: 2, stump: false },
+      bush_berry: { w: 16, h: 16, offY: -2,  colW: 11, colH: 8, colOffY: 1, hp: 1, tool: "any", drop: "berry", amt: 2, stump: false },
+      rock_large: { w: 32, h: 32, offY: -6,  colW: 20, colH: 11, colOffY: 1, hp: 4, tool: "pickaxe", drop: "stone", amt: 4, stump: false },
+      rock_small: { w: 16, h: 16, offY: -2,  colW: 11, colH: 7, colOffY: 1, hp: 2, tool: "pickaxe", drop: "stone", amt: 2, stump: false },
+      rock_ore:   { w: 16, h: 16, offY: -2,  colW: 11, colH: 7, colOffY: 1, hp: 3, tool: "pickaxe", drop: "stone", amt: 3, stump: false }
+    };
+
+    const player = {
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      walkSpeed: 95,
+      runSpeed: 165,
+      facing: "down",
+      state: "idle",
+      toolIndex: 0,
+      animFrame: 0,
+      animTimer: 0,
+      acting: false,
+      actTimer: 0,
+      actDuration: 0,
+      actHitDone: false,
+      lastDiag: "",
+      diagGrace: 0,
+      previewOverrideAnim: null
+    };
+
+    const keys = {};
+    window.addEventListener("keydown", (e) => {
+      keys[e.code] = true;
+      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
+        e.preventDefault();
+      }
+      if (e.code === "Digit1") selectTool(0);
+      if (e.code === "Digit2") selectTool(1);
+      if (e.code === "Digit3") selectTool(2);
+      if (e.code === "Digit4") selectTool(3);
+      if (e.code === "KeyR") regenerateWorld();
+      if (e.code === "KeyC" || e.code === "F3") toggleDebug();
+      if (e.code === "Space") triggerTool(TOOLS[player.toolIndex]);
+      if (e.code === "KeyE" || e.code === "KeyF") triggerTool("interact");
+    });
+    window.addEventListener("keyup", (e) => {
+      keys[e.code] = false;
+    });
+
+    function generateWorld(seed) {
+      worldSeed = seed;
+      document.getElementById("seed-badge").textContent = `Сид: ${worldSeed}`;
+      groundGrid = [];
+      decorGrid = [];
+      waterCells.clear();
+      worldObjects = [];
+
+      const halfW = MAP_W / 2, halfH = MAP_H / 2;
+      const occupied = new Set();
+
+      for (let ty = -halfH; ty < halfH; ty++) {
+        const row = [];
+        const dRow = [];
+        for (let tx = -halfW; tx < halfW; tx++) {
+          const dist = Math.hypot(tx, ty);
+          let elev = fbm(tx * 0.045, ty * 0.045, seed, 3);
+          let rVal = Math.abs(fbm(tx * 0.032, ty * 0.032, seed + 1013, 2));
+          let fVal = fbm(tx * 0.075, ty * 0.075, seed + 4099, 2);
+
+          if (dist < 6.0) {
+            const b = (6.0 - dist) / 6.0;
+            elev = Math.max(elev, 0.12 * b);
+            rVal = Math.max(rVal, 0.14 * b);
+          }
+
+          const isRiver = rVal < 0.058;
+          const isDeepLake = elev < -0.27;
+          const isShallowLake = elev < -0.14;
+          const isWater = isRiver || isDeepLake || isShallowLake;
+
+          const onNsTrail = Math.abs(tx - Math.round(Math.sin(ty * 0.12) * 2)) <= 1;
+          const onEwTrail = Math.abs(ty - Math.round(Math.cos(tx * 0.12) * 2)) <= 1;
+          const isTrail = onNsTrail || onEwTrail;
+          const variant = ((tx * 7 + ty * 13) % 4 + 4) % 4;
+
+          let cellTile = { col: 4 + variant, row: 1 };
+          let dTile = null;
+
+          if (isWater) {
+            if (isTrail && (isRiver || !isDeepLake)) {
+              const bCol = onEwTrail ? (variant % 2) : (2 + (variant % 2));
+              cellTile = { col: bCol, row: 2 };
+            } else {
+              let wCol = variant;
+              if (isDeepLake) wCol = variant;
+              else if (isRiver) wCol = 8 + variant;
+              else wCol = (hash2D(tx, ty, seed + 77) < 0.14) ? (12 + variant) : (4 + variant);
+              cellTile = { col: wCol, row: 0 };
+              waterCells.add(`${tx},${ty}`);
+            }
+          } else {
+            if (isTrail) {
+              cellTile = { col: 12 + variant, row: 1 };
+            } else if (elev < -0.05 || rVal < 0.088) {
+              cellTile = { col: variant, row: 1 };
+            } else if (fVal > 0.12 || elev > 0.22) {
+              cellTile = { col: 8 + variant, row: 1 };
+            } else {
+              cellTile = { col: 4 + variant, row: 1 };
+            }
+
+            // Spawn objects or ground decor
+            const roll = hash2D(tx, ty, seed + 999);
+            if (!isTrail && dist >= 3.5 && Math.abs(tx) < halfW - 2 && Math.abs(ty) < halfH - 2) {
+              let hasNeighbor = false;
+              for (let oy = -1; oy <= 1; oy++) {
+                for (let ox = -1; ox <= 1; ox++) {
+                  if (occupied.has(`${tx + ox},${ty + oy}`) || waterCells.has(`${tx + ox},${ty + oy}`)) {
+                    hasNeighbor = true;
+                  }
+                }
+              }
+              if (!hasNeighbor) {
+                if (fVal > 0.12 && roll < 0.28) {
+                  const kind = elev > 0.26 ? "tree_pine" : (fVal > 0.36 && (tx + ty) % 2 === 0 ? "tree_birch" : "tree_oak");
+                  spawnObject(kind, tx, ty);
+                  occupied.add(`${tx},${ty}`);
+                } else if (fVal > 0.04 && roll > 0.28 && roll < 0.33) {
+                  spawnObject(roll < 0.31 ? "bush_berry" : "log_fallen", tx, ty);
+                  occupied.add(`${tx},${ty}`);
+                } else if (elev > 0.15 && roll > 0.92) {
+                  const rKind = roll > 0.97 ? "rock_large" : (roll > 0.945 ? "rock_ore" : "rock_small");
+                  spawnObject(rKind, tx, ty);
+                  occupied.add(`${tx},${ty}`);
+                }
+              }
+            }
+
+            if (!occupied.has(`${tx},${ty}`) && !isTrail && hash2D(tx, ty, seed + 555) < 0.14) {
+              const dv = Math.floor(hash2D(tx, ty, seed + 333) * 4) % 4;
+              if (fVal > 0.18) dTile = { col: 8 + dv, row: 3 };
+              else if (elev < 0.0) dTile = { col: 12 + dv, row: 3 };
+              else dTile = { col: (hash2D(tx, ty, seed + 111) < 0.55 ? dv : 4 + dv), row: 3 };
+            }
+          }
+
+          row.push(cellTile);
+          dRow.push(dTile);
+        }
+        groundGrid.push(row);
+        decorGrid.push(dRow);
+      }
+
+      player.x = 0;
+      player.y = 0;
+      player.vx = 0;
+      player.vy = 0;
+    }
+
+    function spawnObject(type, tx, ty) {
+      const def = OBJECT_DEFS[type];
+      worldObjects.push({
+        type,
+        x: tx * TILE + TILE / 2,
+        y: ty * TILE + TILE / 2,
+        hp: def.hp,
+        shakeTime: 0
+      });
+    }
+
+    function vecToDirName(vx, vy) {
+      const angle = Math.atan2(vy, vx);
+      const sector = Math.round(angle / (Math.PI / 4));
+      switch (sector) {
+        case 0: return "right";
+        case 1: return "down_right";
+        case 2: return "down";
+        case 3: return "down_left";
+        case 4:
+        case -4: return "left";
+        case -3: return "up_left";
+        case -2: return "up";
+        case -1: return "up_right";
+        default: return "down";
+      }
+    }
+
+    function selectTool(idx) {
+      player.toolIndex = idx;
+      document.querySelectorAll(".hotbar .slot").forEach((el, i) => {
+        el.classList.toggle("selected", i === idx);
+      });
+    }
+
+    function triggerTool(toolId) {
+      if (player.acting) return;
+      player.previewOverrideAnim = null;
+      player.acting = true;
+      player.state = toolId;
+      player.animFrame = 0;
+      player.animTimer = 0;
+      player.actTimer = 0;
+      const cfg = ANIM_CONFIG[toolId];
+      player.actDuration = cfg.frames / cfg.fps;
+      player.actHitDone = false;
+      updateHudState();
+    }
+
+    function applyToolHit(toolId) {
+      const fVec = DIR_VECTORS[player.facing];
+      const len = Math.hypot(fVec.x, fVec.y) || 1;
+      const hitX = player.x + (fVec.x / len) * 16;
+      const hitY = player.y + 6 + (fVec.y / len) * 16;
+
+      let bestObj = null, bestDist = 20;
+      for (const obj of worldObjects) {
+        const d = Math.hypot(obj.x - hitX, obj.y - hitY);
+        if (d < bestDist) {
+          bestDist = d;
+          bestObj = obj;
+        }
+      }
+
+      if (bestObj) {
+        bestObj.shakeTime = 0.16;
+        const def = OBJECT_DEFS[bestObj.type];
+        if (def.tool === "any" || def.tool === toolId) {
+          bestObj.hp--;
+          if (bestObj.hp <= 0) {
+            inventory[def.drop] = (inventory[def.drop] || 0) + def.amt;
+            if (def.stump) {
+              bestObj.type = "tree_stump";
+              bestObj.hp = OBJECT_DEFS.tree_stump.hp;
+            } else {
+              worldObjects.splice(worldObjects.indexOf(bestObj), 1);
+            }
+            updateInventoryHud();
+          }
+        }
+        return;
+      }
+
+      if (toolId === "water") {
+        const tx = Math.floor(hitX / TILE);
+        const ty = Math.floor(hitY / TILE);
+        const gx = tx + MAP_W / 2;
+        const gy = ty + MAP_H / 2;
+        if (gy >= 0 && gy < MAP_H && gx >= 0 && gx < MAP_W) {
+          const tile = groundGrid[gy][gx];
+          if (tile.row === 1) {
+            const v = ((tx + ty) % 4 + 4) % 4;
+            groundGrid[gy][gx] = { col: 4 + v, row: 2 };
+            if (!decorGrid[gy][gx]) decorGrid[gy][gx] = { col: v, row: 3 };
+            inventory.watered++;
+            updateInventoryHud();
+          }
+        }
+      }
+    }
+
+    function circleRectCollide(cx, cy, cr, rx, ry, rw, rh) {
+      const closestX = Math.max(rx, Math.min(cx, rx + rw));
+      const closestY = Math.max(ry, Math.min(cy, ry + rh));
+      const dx = cx - closestX;
+      const dy = cy - closestY;
+      return (dx * dx + dy * dy) < (cr * cr);
+    }
+
+    function isCollidingAt(px, py) {
+      const feetX = px;
+      const feetY = py + 10;
+      const radius = 5.0;
+
+      // Map borders
+      const maxW = (MAP_W / 2) * TILE - 8;
+      const maxH = (MAP_H / 2) * TILE - 8;
+      if (feetX < -maxW || feetX > maxW || feetY < -maxH || feetY > maxH) return true;
+
+      // Check water tiles around feet
+      const minTx = Math.floor((feetX - radius) / TILE);
+      const maxTx = Math.floor((feetX + radius) / TILE);
+      const minTy = Math.floor((feetY - radius) / TILE);
+      const maxTy = Math.floor((feetY + radius) / TILE);
+
+      for (let ty = minTy; ty <= maxTy; ty++) {
+        for (let tx = minTx; tx <= maxTx; tx++) {
+          if (waterCells.has(`${tx},${ty}`)) {
+            if (circleRectCollide(feetX, feetY, radius, tx * TILE, ty * TILE, TILE, TILE)) {
+              return true;
+            }
+          }
+        }
+      }
+
+      // Check world objects
+      for (const obj of worldObjects) {
+        const def = OBJECT_DEFS[obj.type];
+        const rx = obj.x - def.colW / 2;
+        const ry = obj.y + def.colOffY - def.colH / 2;
+        if (circleRectCollide(feetX, feetY, radius, rx, ry, def.colW, def.colH)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function updatePlayer(dt) {
+      if (player.diagGrace > 0) player.diagGrace -= dt;
+
+      if (player.acting) {
+        player.actTimer += dt;
+        if (!player.actHitDone && player.actTimer >= player.actDuration * 0.52) {
+          player.actHitDone = true;
+          applyToolHit(player.state);
+        }
+        if (player.actTimer >= player.actDuration) {
+          player.acting = false;
+          player.state = "idle";
+        }
+      } else {
+        let ix = 0, iy = 0;
+        if (keys["KeyA"] || keys["ArrowLeft"]) ix -= 1;
+        if (keys["KeyD"] || keys["ArrowRight"]) ix += 1;
+        if (keys["KeyW"] || keys["ArrowUp"]) iy -= 1;
+        if (keys["KeyS"] || keys["ArrowDown"]) iy += 1;
+
+        if (ix !== 0 || iy !== 0) {
+          player.previewOverrideAnim = null;
+          const len = Math.hypot(ix, iy);
+          const nx = ix / len, ny = iy / len;
+          const candidate = vecToDirName(nx, ny);
+          if (candidate.includes("_")) {
+            player.lastDiag = candidate;
+            player.diagGrace = 0.065;
+            player.facing = candidate;
+          } else if (player.diagGrace > 0 && player.lastDiag) {
+            player.facing = player.lastDiag;
+          } else {
+            player.facing = candidate;
+          }
+
+          const running = !!(keys["ShiftLeft"] || keys["ShiftRight"]);
+          const spd = running ? player.runSpeed : player.walkSpeed;
+          player.state = running ? "run" : "walk";
+
+          const stepX = nx * spd * dt;
+          const stepY = ny * spd * dt;
+          if (!isCollidingAt(player.x + stepX, player.y)) player.x += stepX;
+          if (!isCollidingAt(player.x, player.y + stepY)) player.y += stepY;
+        } else {
+          player.state = player.previewOverrideAnim || "idle";
+        }
+      }
+
+      const cfg = ANIM_CONFIG[player.state] || ANIM_CONFIG.idle;
+      player.animTimer += dt;
+      if (player.animTimer >= 1.0 / cfg.fps) {
+        player.animTimer -= 1.0 / cfg.fps;
+        if (cfg.loop) {
+          player.animFrame = (player.animFrame + 1) % cfg.frames;
+        } else {
+          player.animFrame = Math.min(cfg.frames - 1, player.animFrame + 1);
+        }
+      }
+
+      for (const obj of worldObjects) {
+        if (obj.shakeTime > 0) obj.shakeTime = Math.max(0, obj.shakeTime - dt);
+      }
+
+      updateHudState();
+    }
+
+    function updateHudState() {
+      const dirRu = DIR_LABELS_RU[player.facing] || player.facing;
+      document.getElementById("state-line").innerHTML =
+        `Анимация: <b>${player.state}_${player.facing}</b> | Ось (8 напр.): <b>${dirRu}</b>`;
+      document.getElementById("inspector-frame").textContent =
+        `Кадр: ${player.animFrame} (${player.state}_${player.facing})`;
+
+      document.querySelectorAll(".compass-btn[data-dir]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.dir === player.facing);
+      });
+      document.querySelectorAll("#anim-grid button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.anim === player.state);
+      });
+    }
+
+    function updateInventoryHud() {
+      document.getElementById("res-wood").textContent = inventory.wood;
+      document.getElementById("res-stone").textContent = inventory.stone;
+      document.getElementById("res-berry").textContent = inventory.berry;
+      document.getElementById("res-water").textContent = inventory.watered;
+    }
+
+    function regenerateWorld() {
+      const nextSeed = Math.floor(100000 + Math.random() * 900000);
+      generateWorld(nextSeed);
+    }
+
+    function toggleDebug() {
+      debugCollisions = !debugCollisions;
+      document.getElementById("btn-debug").classList.toggle("active", debugCollisions);
+    }
+
+    function initGame() {
+      generateWorld(worldSeed);
+
+      const canvas = document.getElementById("world-canvas");
+      const ctx = canvas.getContext("2d");
+      const prevCanvas = document.getElementById("char-preview-canvas");
+      const prevCtx = prevCanvas.getContext("2d");
+
+      function resize() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      canvas.addEventListener("mousedown", (e) => {
+        if (e.button === 0) {
+          const rect = canvas.getBoundingClientRect();
+          const mx = e.clientX - rect.left - canvas.width / 2;
+          const my = e.clientY - rect.top - canvas.height / 2;
+          if (Math.hypot(mx, my) > 4) {
+            player.facing = vecToDirName(mx, my);
+          }
+          triggerTool(TOOLS[player.toolIndex]);
+        }
+      });
+
+      document.getElementById("btn-regen").addEventListener("click", regenerateWorld);
+      document.getElementById("btn-debug").addEventListener("click", toggleDebug);
+
+      document.querySelectorAll(".hotbar .slot").forEach((el) => {
+        el.addEventListener("click", () => selectTool(parseInt(el.dataset.tool, 10)));
+      });
+
+      document.querySelectorAll(".compass-btn[data-dir]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          player.facing = btn.dataset.dir;
+          updateHudState();
+        });
+      });
+
+      document.querySelectorAll("#anim-grid button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const anim = btn.dataset.anim;
+          player.previewOverrideAnim = anim;
+          player.state = anim;
+          player.animFrame = 0;
+          updateHudState();
+        });
+      });
+
+      let lastTime = performance.now();
+      let waterTick = 0;
+      let waterPhase = 0;
+
+      function loop(now) {
+        const dt = Math.min(0.05, (now - lastTime) / 1000);
+        lastTime = now;
+
+        waterTick += dt;
+        if (waterTick >= 0.55) {
+          waterTick = 0;
+          waterPhase = (waterPhase + 1) % 4;
+        }
+
+        updatePlayer(dt);
+
+        const zoom = 3.5;
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = "#245ca8";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
+        ctx.scale(zoom, zoom);
+        ctx.translate(-Math.round(player.x), -Math.round(player.y));
+
+        const halfW = MAP_W / 2, halfH = MAP_H / 2;
+        const viewHalfW = Math.ceil(canvas.width / zoom / TILE / 2) + 2;
+        const viewHalfH = Math.ceil(canvas.height / zoom / TILE / 2) + 2;
+        const pTx = Math.floor(player.x / TILE);
+        const pTy = Math.floor(player.y / TILE);
+
+        const startX = Math.max(-halfW, pTx - viewHalfW);
+        const endX = Math.min(halfW, pTx + viewHalfW);
+        const startY = Math.max(-halfH, pTy - viewHalfH);
+        const endY = Math.min(halfH, pTy + viewHalfH);
+
+        // Draw Ground & Decor Tiles
+        for (let ty = startY; ty < endY; ty++) {
+          for (let tx = startX; tx < endX; tx++) {
+            const tile = groundGrid[ty + halfH][tx + halfW];
+            let col = tile.col;
+            if (tile.row === 0 && col < 12) {
+              const base = Math.floor(col / 4) * 4;
+              col = base + ((col + waterPhase) % 4);
+            }
+            ctx.drawImage(
+              images.tileset,
+              col * TILE, tile.row * TILE, TILE, TILE,
+              tx * TILE, ty * TILE, TILE, TILE
+            );
+
+            const dec = decorGrid[ty + halfH][tx + halfW];
+            if (dec) {
+              ctx.drawImage(
+                images.tileset,
+                dec.col * TILE, dec.row * TILE, TILE, TILE,
+                tx * TILE, ty * TILE, TILE, TILE
+              );
+            }
+
+            if (debugCollisions && waterCells.has(`${tx},${ty}`)) {
+              ctx.fillStyle = "rgba(25, 145, 255, 0.30)";
+              ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+              ctx.strokeStyle = "rgba(80, 220, 255, 0.8)";
+              ctx.lineWidth = 0.6;
+              ctx.strokeRect(tx * TILE + 0.3, ty * TILE + 0.3, TILE - 0.6, TILE - 0.6);
+            }
+          }
+        }
+
+        // Y-Sort Render List (Objects + Player)
+        const renderables = [];
+        for (const obj of worldObjects) {
+          renderables.push({ kind: "obj", y: obj.y, obj });
+        }
+        renderables.push({ kind: "player", y: player.y + 8 });
+        renderables.sort((a, b) => a.y - b.y);
+
+        const cfg = ANIM_CONFIG[player.state] || ANIM_CONFIG.idle;
+        const dirIdx = DIRECTIONS.indexOf(player.facing);
+        const sheetRow = cfg.baseRow + (dirIdx >= 0 ? dirIdx : 0);
+        const sheetCol = player.animFrame % cfg.frames;
+
+        for (const item of renderables) {
+          if (item.kind === "obj") {
+            const o = item.obj;
+            const def = OBJECT_DEFS[o.type];
+            const img = images[o.type];
+            const shakeX = o.shakeTime > 0 ? Math.sin(o.shakeTime * 90) * 1.8 : 0;
+            ctx.drawImage(
+              img,
+              Math.round(o.x - def.w / 2 + shakeX),
+              Math.round(o.y + def.offY - def.h / 2)
+            );
+            if (debugCollisions) {
+              const rx = o.x - def.colW / 2;
+              const ry = o.y + def.colOffY - def.colH / 2;
+              ctx.fillStyle = "rgba(255, 65, 65, 0.42)";
+              ctx.fillRect(rx, ry, def.colW, def.colH);
+              ctx.strokeStyle = "rgba(255, 120, 50, 0.95)";
+              ctx.lineWidth = 0.8;
+              ctx.strokeRect(rx, ry, def.colW, def.colH);
+            }
+          } else {
+            ctx.drawImage(
+              images.player,
+              sheetCol * 32, sheetRow * 32, 32, 32,
+              Math.round(player.x - 16), Math.round(player.y - 18), 32, 32
+            );
+            if (debugCollisions) {
+              // Feet collision circle
+              ctx.beginPath();
+              ctx.arc(player.x, player.y + 10, 5.0, 0, Math.PI * 2);
+              ctx.fillStyle = "rgba(0, 245, 255, 0.4)";
+              ctx.fill();
+              ctx.strokeStyle = "#00ffff";
+              ctx.lineWidth = 0.9;
+              ctx.stroke();
+
+              // 8-direction ray & tool hitbox
+              const fv = DIR_VECTORS[player.facing];
+              const fl = Math.hypot(fv.x, fv.y) || 1;
+              const tx = player.x + (fv.x / fl) * 16;
+              const ty = player.y + 6 + (fv.y / fl) * 16;
+              ctx.beginPath();
+              ctx.moveTo(player.x, player.y + 6);
+              ctx.lineTo(tx, ty);
+              ctx.strokeStyle = "#ffe53b";
+              ctx.lineWidth = 1.2;
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.arc(tx, ty, 5.5, 0, Math.PI * 2);
+              ctx.fillStyle = "rgba(255, 110, 50, 0.35)";
+              ctx.fill();
+              ctx.strokeStyle = "#ff7832";
+              ctx.lineWidth = 0.8;
+              ctx.stroke();
+            }
+          }
+        }
+
+        ctx.restore();
+
+        // Update Sidebar 32x32 Character Inspector
+        prevCtx.imageSmoothingEnabled = false;
+        prevCtx.clearRect(0, 0, 32, 32);
+        prevCtx.drawImage(
+          images.player,
+          sheetCol * 32, sheetRow * 32, 32, 32,
+          0, 0, 32, 32
+        );
+
+        requestAnimationFrame(loop);
+      }
+
+      requestAnimationFrame(loop);
+    }
+  </script>
+</body>
+</html>

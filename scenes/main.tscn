@@ -1,0 +1,79 @@
+[gd_scene load_steps=3 format=3 uid="uid://c8main000001"]
+
+[ext_resource type="PackedScene" uid="uid://c8world000001" path="res://scenes/world.tscn" id="1_world_scene"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="2_hud_script"]
+
+[node name="Main" type="Node2D"]
+
+[node name="World" parent="." instance=ExtResource("1_world_scene")]
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("2_hud_script")
+
+[node name="TopLeftPanel" type="PanelContainer" parent="HUD"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 680.0
+offset_bottom = 148.0
+
+[node name="MarginContainer" type="MarginContainer" parent="HUD/TopLeftPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HUD/TopLeftPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="InfoLabel" type="Label" parent="HUD/TopLeftPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Сид мира: 20261002"
+
+[node name="ResourcesLabel" type="Label" parent="HUD/TopLeftPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.85, 0.45, 1)
+theme_override_font_sizes/font_size = 14
+text = "Дерево: 0  |  Камень: 0  |  Ягоды: 0  |  Полито: 0"
+
+[node name="ButtonsRow" type="HBoxContainer" parent="HUD/TopLeftPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RegenButton" type="Button" parent="HUD/TopLeftPanel/MarginContainer/VBoxContainer/ButtonsRow"]
+layout_mode = 2
+focus_mode = 0
+text = "[R] Новый сид мира"
+
+[node name="DebugButton" type="Button" parent="HUD/TopLeftPanel/MarginContainer/VBoxContainer/ButtonsRow"]
+layout_mode = 2
+focus_mode = 0
+text = "[C] Показать коллизии"
+
+[node name="BottomHotbar" type="PanelContainer" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -360.0
+offset_top = -52.0
+offset_right = 360.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="HUD/BottomHotbar"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 6
+
+[node name="HotbarLabel" type="Label" parent="HUD/BottomHotbar/MarginContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 14
+text = ">> [1] Топор <<   |   [2] Кирка   |   [3] Лейка   |   [4] Рука"
