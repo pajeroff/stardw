@@ -6,6 +6,7 @@ signal resource_dropped(resource_type: String, amount: int, world_pos: Vector2)
 @export var object_type: String = "tree_oak"
 
 const OBJECT_DEFS: Dictionary = {
+	# 8 Natural Tree Varieties
 	"tree_oak": {
 		"texture": "res://assets/objects/tree_oak.png",
 		"sprite_offset": Vector2(0, -76),
@@ -83,6 +84,19 @@ const OBJECT_DEFS: Dictionary = {
 		"drop_amount": 5,
 		"becomes_stump": true,
 	},
+	"tree_poplar": {
+		"texture": "res://assets/objects/tree_poplar.png",
+		"sprite_offset": Vector2(0, -86),
+		"collision_size": Vector2(30, 22),
+		"collision_offset": Vector2(0, -8),
+		"hp": 3,
+		"tool": "axe",
+		"drop_type": "wood",
+		"drop_amount": 3,
+		"becomes_stump": true,
+	},
+
+	# 3 Forest Props
 	"tree_stump": {
 		"texture": "res://assets/objects/tree_stump.png",
 		"sprite_offset": Vector2(0, -20),
@@ -116,6 +130,8 @@ const OBJECT_DEFS: Dictionary = {
 		"drop_amount": 2,
 		"becomes_stump": false,
 	},
+
+	# 8 Pure Natural Rock Varieties (NO ore, NO crystals)
 	"rock_large": {
 		"texture": "res://assets/objects/rock_large.png",
 		"sprite_offset": Vector2(0, -36),
@@ -160,32 +176,43 @@ const OBJECT_DEFS: Dictionary = {
 		"drop_amount": 4,
 		"becomes_stump": false,
 	},
-	"rock_ore": {
-		"texture": "res://assets/objects/rock_ore.png",
-		"sprite_offset": Vector2(0, -28),
-		"collision_size": Vector2(56, 30),
-		"collision_offset": Vector2(0, -10),
-		"hp": 3,
+	"rock_limestone": {
+		"texture": "res://assets/objects/rock_limestone.png",
+		"sprite_offset": Vector2(0, -34),
+		"collision_size": Vector2(72, 38),
+		"collision_offset": Vector2(0, -11),
+		"hp": 4,
 		"tool": "pickaxe",
 		"drop_type": "stone",
 		"drop_amount": 4,
 		"becomes_stump": false,
 	},
-	"rock_crystal": {
-		"texture": "res://assets/objects/rock_crystal.png",
-		"sprite_offset": Vector2(0, -30),
-		"collision_size": Vector2(62, 34),
-		"collision_offset": Vector2(0, -11),
-		"hp": 4,
+	"rock_basalt": {
+		"texture": "res://assets/objects/rock_basalt.png",
+		"sprite_offset": Vector2(0, -36),
+		"collision_size": Vector2(76, 40),
+		"collision_offset": Vector2(0, -12),
+		"hp": 5,
 		"tool": "pickaxe",
 		"drop_type": "stone",
-		"drop_amount": 6,
+		"drop_amount": 5,
+		"becomes_stump": false,
+	},
+	"rock_flat": {
+		"texture": "res://assets/objects/rock_flat.png",
+		"sprite_offset": Vector2(0, -30),
+		"collision_size": Vector2(74, 36),
+		"collision_offset": Vector2(0, -10),
+		"hp": 3,
+		"tool": "pickaxe",
+		"drop_type": "stone",
+		"drop_amount": 3,
 		"becomes_stump": false,
 	},
 	"rock_small": {
 		"texture": "res://assets/objects/rock_small.png",
 		"sprite_offset": Vector2(0, -20),
-		"collision_size": Vector2(40, 22),
+		"collision_size": Vector2(42, 22),
 		"collision_offset": Vector2(0, -7),
 		"hp": 2,
 		"tool": "pickaxe",
@@ -253,10 +280,10 @@ func _play_shake() -> void:
 	if not sprite:
 		return
 	var tw: Tween = create_tween()
-	tw.tween_property(sprite, "position", Vector2(3.5, 0.0), 0.04)
-	tw.tween_property(sprite, "position", Vector2(-3.5, 0.0), 0.04)
-	tw.tween_property(sprite, "position", Vector2(2.0, 0.0), 0.04)
-	tw.tween_property(sprite, "position", Vector2.ZERO, 0.04)
+	tw.tween_property(sprite, "position", Vector2(2.5, 0.0), 0.045)
+	tw.tween_property(sprite, "position", Vector2(-2.5, 0.0), 0.045)
+	tw.tween_property(sprite, "position", Vector2(1.5, 0.0), 0.045)
+	tw.tween_property(sprite, "position", Vector2.ZERO, 0.045)
 
 
 func set_debug_draw(enabled: bool) -> void:

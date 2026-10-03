@@ -5,10 +5,10 @@ signal state_changed(anim_state: String, dir_name: String, dir_vector: Vector2)
 signal tool_changed(tool_index: int, tool_id: String, tool_title: String)
 signal tool_used(tool_id: String, target_global_pos: Vector2, facing_dir: Vector2)
 
-@export var walk_speed: float = 155.0
-@export var run_speed: float = 265.0
-@export var acceleration: float = 1400.0
-@export var friction: float = 1600.0
+@export var walk_speed: float = 150.0
+@export var run_speed: float = 250.0
+@export var acceleration: float = 1050.0
+@export var friction: float = 1200.0
 
 # Order of directions matches rows in assets/sprites/player_spritesheet.png (96x96 frames)
 const DIRECTIONS: Array[String] = [
@@ -46,23 +46,23 @@ const DIRECTION_LABELS_RU: Dictionary = {
 
 # Animation table matching player_spritesheet.png (56 rows x 8 columns, 96x96 per frame)
 const ANIM_CONFIG: Dictionary = {
-	"idle":     {"base_row": 0,  "frames": 8, "fps": 8.0,  "loop": true},
-	"walk":     {"base_row": 8,  "frames": 8, "fps": 12.0, "loop": true},
-	"run":      {"base_row": 16, "frames": 8, "fps": 16.0, "loop": true},
-	"axe":      {"base_row": 24, "frames": 8, "fps": 16.0, "loop": false},
-	"pickaxe":  {"base_row": 32, "frames": 8, "fps": 16.0, "loop": false},
-	"water":    {"base_row": 40, "frames": 8, "fps": 14.0, "loop": false},
-	"interact": {"base_row": 48, "frames": 8, "fps": 12.0, "loop": false},
+	"idle":     {"base_row": 0,  "frames": 8, "fps": 7.0,  "loop": true},
+	"walk":     {"base_row": 8,  "frames": 8, "fps": 10.5, "loop": true},
+	"run":      {"base_row": 16, "frames": 8, "fps": 14.0, "loop": true},
+	"axe":      {"base_row": 24, "frames": 8, "fps": 13.0, "loop": false},
+	"pickaxe":  {"base_row": 32, "frames": 8, "fps": 13.0, "loop": false},
+	"water":    {"base_row": 40, "frames": 8, "fps": 12.0, "loop": false},
+	"interact": {"base_row": 48, "frames": 8, "fps": 11.0, "loop": false},
 }
 
 const TOOLS: Array[Dictionary] = [
-	{"id": "axe",      "title": "Топор лесоруба"},
-	{"id": "pickaxe",  "title": "Кирка рудокопа"},
-	{"id": "water",    "title": "Походная лейка"},
-	{"id": "interact", "title": "Сбор / Осмотр (Рука)"},
+	{"id": "axe",      "title": "Рубка дерева"},
+	{"id": "pickaxe",  "title": "Разбор камня"},
+	{"id": "water",    "title": "Полив почвы"},
+	{"id": "interact", "title": "Сбор / Осмотр"},
 ]
 
-const DIAGONAL_GRACE_TIME: float = 0.065
+const DIAGONAL_GRACE_TIME: float = 0.085
 
 @onready var sprite: Sprite2D = $Sprite2D
 @onready var anim_player: AnimationPlayer = $AnimationPlayer
@@ -236,6 +236,7 @@ func _update_interaction_transform() -> void:
 
 func _play_8dir_animation(state_name: String, dir_name: String) -> void:
 	var full_anim_name: String = "%s_%s" % [state_name, dir_name]
+	var same_state: bool = (state_name == current_state)
 	var changed: bool = (state_name != current_state) or (dir_name != facing_name)
 	current_state = state_name
 
@@ -251,7 +252,14 @@ func _play_8dir_animation(state_name: String, dir_name: String) -> void:
 
 	if anim_player and anim_player.has_animation(full_anim_name):
 		if anim_player.current_animation != full_anim_name:
+			var prev_pos: float = 0.0
+			if same_state and anim_player.is_playing():
+				prev_pos = anim_player.current_animation_position
 			anim_player.play(full_anim_name)
+			if same_state and prev_pos > 0.0:
+				var anim_res: Animation = anim_player.get_animation(full_anim_name)
+				if anim_res and anim_res.length > 0.0:
+					anim_player.seek(fposmod(prev_pos, anim_res.length), true)
 
 	if changed:
 		state_changed.emit(current_state, facing_name, facing_vector)

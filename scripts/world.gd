@@ -330,7 +330,7 @@ func generate_world(new_seed: int) -> void:
 
 	_rebuild_water_physics_bodies()
 
-	# Pass 2: Place All 17 Smooth World Object Varieties (7 Trees, 7 Rocks, 3 Props)
+	# Pass 2: Place All 19 Smooth Natural World Object Varieties (8 Trees, 8 Ore-Free Rocks, 3 Props)
 	var occupied_cells: Dictionary = {}
 
 	for ty in range(y_min + 3, y_max - 3):
@@ -357,36 +357,57 @@ func generate_world(new_seed: int) -> void:
 			var roll: float = rng.randf()
 
 			if not _has_neighbor_in_dict(occupied_cells, cell, 2):
-				# Weeping Willows & Mossy River Rocks near riverbanks & lake shores!
-				if near_water_ring and roll < 0.25:
-					if roll < 0.17:
+				# Weeping Willows, Poplars & Mossy River Rocks near riverbanks & lake shores
+				if near_water_ring and roll < 0.26:
+					if roll < 0.14:
 						_spawn_world_object("tree_willow", cell)
+						tree_count += 1
+					elif roll < 0.19:
+						_spawn_world_object("tree_poplar", cell)
 						tree_count += 1
 					else:
 						_spawn_world_object("rock_river", cell)
 						rock_count += 1
 					occupied_cells[cell] = true
 					continue
-				elif not sand_lookup.has(cell) and f_val > 0.03 and roll < 0.36:
+				elif not sand_lookup.has(cell) and f_val > 0.02 and roll < 0.37:
 					var tree_kind: String = "tree_oak"
 					if ty < -7 or elev > 0.22:
-						tree_kind = "tree_pine" if (tx + ty) % 2 == 0 else "tree_cedar"
+						var n_mod: int = posmod(tx + ty, 3)
+						if n_mod == 0:
+							tree_kind = "tree_pine"
+						elif n_mod == 1:
+							tree_kind = "tree_cedar"
+						else:
+							tree_kind = "tree_poplar"
 					elif tx > int(river_base_x) + 3:
-						var m_mod: int = posmod(tx * 3 + ty * 5, 3)
+						var m_mod: int = posmod(tx * 3 + ty * 5, 4)
 						if m_mod == 0:
 							tree_kind = "tree_maple"
 						elif m_mod == 1:
 							tree_kind = "tree_birch"
+						elif m_mod == 2:
+							tree_kind = "tree_poplar"
 						else:
 							tree_kind = "tree_oak"
 					elif ty > 6:
-						tree_kind = "tree_cherry" if (tx + ty) % 2 == 0 else "tree_oak"
+						var s_mod: int = posmod(tx + ty, 3)
+						if s_mod == 0:
+							tree_kind = "tree_cherry"
+						elif s_mod == 1:
+							tree_kind = "tree_poplar"
+						else:
+							tree_kind = "tree_oak"
 					else:
-						var f_mod: int = posmod(tx + ty * 2, 4)
+						var f_mod: int = posmod(tx + ty * 2, 5)
 						if f_mod == 0:
 							tree_kind = "tree_cedar"
 						elif f_mod == 1:
 							tree_kind = "tree_cherry"
+						elif f_mod == 2:
+							tree_kind = "tree_poplar"
+						elif f_mod == 3:
+							tree_kind = "tree_birch"
 						else:
 							tree_kind = "tree_oak"
 					_spawn_world_object(tree_kind, cell)
@@ -399,18 +420,22 @@ func generate_world(new_seed: int) -> void:
 					occupied_cells[cell] = true
 					tree_count += 1
 					continue
-				elif (elev > 0.08 or ty < -7 or tx > int(river_base_x) + 4) and roll > 0.88:
+				elif (elev > 0.06 or ty < -6 or tx > int(river_base_x) + 3) and roll > 0.86:
 					var r_roll: float = rng.randf()
 					var rock_kind: String = "rock_small"
-					if r_roll < 0.18:
-						rock_kind = "rock_crystal"
-					elif r_roll < 0.36:
-						rock_kind = "rock_ore"
-					elif r_roll < 0.54:
-						rock_kind = "rock_sandstone" if tx > 0 else "rock_slate"
-					elif r_roll < 0.72:
+					if r_roll < 0.14:
+						rock_kind = "rock_basalt"
+					elif r_roll < 0.28:
+						rock_kind = "rock_limestone"
+					elif r_roll < 0.42:
+						rock_kind = "rock_sandstone"
+					elif r_roll < 0.56:
+						rock_kind = "rock_slate"
+					elif r_roll < 0.70:
+						rock_kind = "rock_flat"
+					elif r_roll < 0.82:
 						rock_kind = "rock_river"
-					elif r_roll < 0.88:
+					elif r_roll < 0.92:
 						rock_kind = "rock_large"
 					_spawn_world_object(rock_kind, cell)
 					occupied_cells[cell] = true
