@@ -17,6 +17,9 @@ var _world_stats: Dictionary = {}
 
 func _ready() -> void:
 	if world:
+		_current_seed = world.world_seed
+		if not world.last_world_stats.is_empty():
+			_world_stats = world.last_world_stats
 		world.world_regenerated.connect(_on_world_regenerated)
 		world.inventory_updated.connect(_on_inventory_updated)
 		var player: Player = world.get_node_or_null("YSortRoot/Player")
@@ -81,7 +84,7 @@ func _refresh_labels() -> void:
 			]
 			+ "Анимация: %s_%s  |  Ось (8 напр.): %s\n" % [_current_anim, _current_dir, dir_ru]
 			+ "Управление: WASD/Стрелки (Ходьба) | Shift (Бег) | Пробел/ЛКМ (Инструмент) | E (Действие)\n"
-			+ "Отображение коллизий [C/F3]: %s  |  Перегенерация мира: [R]" % col_state
+			+ "Коллизии [C/F3]: %s  |  Новый мир: [R]  |  Полный экран: [F11]" % col_state
 		)
 
 	if hotbar_label:

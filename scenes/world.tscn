@@ -8,10 +8,10 @@
 script = ExtResource("1_world_script")
 
 [node name="GroundLayer" type="TileMapLayer" parent="."]
-texture_filter = 2
+texture_filter = 1
 
 [node name="DecorLayer" type="TileMapLayer" parent="."]
-texture_filter = 2
+texture_filter = 1
 
 [node name="WaterBody" type="StaticBody2D" parent="."]
 collision_layer = 1

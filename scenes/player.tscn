@@ -18,7 +18,7 @@ wall_min_slide_angle = 0.0872665
 script = ExtResource("1_player_script")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
-texture_filter = 2
+texture_filter = 1
 position = Vector2(0, -38)
 texture = ExtResource("2_player_tex")
 hframes = 8
@@ -43,6 +43,6 @@ shape = SubResource("CircleShape2D_interact")
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(0, -24)
-zoom = Vector2(1.65, 1.65)
+zoom = Vector2(1.5, 1.5)
 position_smoothing_enabled = true
 position_smoothing_speed = 8.0

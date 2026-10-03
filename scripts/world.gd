@@ -25,6 +25,7 @@ const WORLD_OBJECT_SCENE: PackedScene = preload("res://scenes/world_object.tscn"
 var tile_set_resource: TileSet
 var water_cells: Array[Vector2i] = []
 var debug_collisions: bool = false
+var last_world_stats: Dictionary = {}
 var _water_anim_timer: float = 0.0
 var _water_anim_phase: int = 0
 
@@ -37,6 +38,9 @@ var inventory: Dictionary = {
 
 
 func _ready() -> void:
+	if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_FULLSCREEN:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+
 	_build_tileset_with_collisions()
 	ground_layer.tile_set = tile_set_resource
 	decor_layer.tile_set = tile_set_resource
@@ -54,6 +58,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		regenerate_random_world()
 	elif event.is_action_pressed("toggle_debug_collisions"):
 		toggle_collision_debug()
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F11:
+		toggle_fullscreen()
+
+
+func toggle_fullscreen() -> void:
+	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	else:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
 func _process(delta: float) -> void:
@@ -460,12 +473,13 @@ func generate_world(new_seed: int) -> void:
 	if debug_overlay:
 		debug_overlay.queue_redraw()
 
-	world_regenerated.emit(world_seed, {
+	last_world_stats = {
 		"trees": tree_count,
 		"rocks": rock_count,
 		"water_tiles": water_count,
 		"bridges": bridge_spans.size(),
-	})
+	}
+	world_regenerated.emit(world_seed, last_world_stats)
 
 
 func _has_neighbor_in_dict(dict: Dictionary, cell: Vector2i, radius: int) -> bool:
