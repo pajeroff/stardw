@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
-Builds Crisp, True Low-Res Pixel-Art Isometric Assets for Godot 4.7 (Zero Blur / Zero Soapiness):
-  - Unified Pixel Grid: 1 logical pixel = 2x2 texels (NEAREST neighbor, 100% sharp edges, zero Gaussian blur!).
-  - Character: ~16x34 logical pixels (68px tall on 96x96 canvas) — matching the exact pixel count (~15x32 px)
-    of the user's reference image, with a crisp 1-logical-pixel dark brown outline (#261710), warm palette,
-    and ZERO equipment across all 8 directions and 7 animations (8 frames each).
-  - 19 World Objects (8 Trees + 8 Pure Natural Rocks without ore + 3 Forest Props):
-    Quantized to the exact same 2x2 logical pixel grid with crisp binary alpha (0/255), clean 1-logical-pixel
-    dark brown outlines, cluster-quantized Stardew Valley colors, and crisp pixel-art shadows.
-  - Isometric Tileset (assets/tilesets/world_tileset.png, 1024x200, 64x40 cells = 32x20 logical pixels per tile):
-    Hand-crafted crisp pixel-art grass blades, clovers, interlocking cobblestones, wooden planks, and water ripples
-    with seamless edges and zero blur.
+Builds High-Clarity 1:1 Pixel-Art Isometric Assets for Godot 4.7 (Stardew Valley Style):
+  - True 1:1 Pixel Resolution (PIXEL_SCALE = 1):
+    NO blocky 2x2 downsampling and NO Gaussian blur — every pixel is a crisp 1x1 texel rendered
+    with Nearest filtering in Godot.
+  - Readable, Expressive Stardew-Style Explorer (assets/sprites/player_spritesheet.png, 96x96 frames):
+    74px tall at full 1:1 pixel resolution so facial features (eyes, hair, collar, vest, belt, boots)
+    are 100% clear and readable across all 8 directions and 7 animations (8 frames each).
+  - 19 Natural World Objects (8 Trees + 8 Pure Natural Rocks without ore + 3 Dedicated Forest Props):
+    Built from clean Stardew-style sprites (including dedicated sdv_bush_berry.png, sdv_log_fallen.png,
+    and sdv_tree_stump.png) at full 1:1 resolution with harmonized natural colors and crisp silhouettes.
+  - Seamless 2:1 Isometric Terrain Tileset (assets/tilesets/world_tileset.png, 1024x200, 64x40 cells):
+    Flush 64x32 isometric diamonds (NO protruding cliff skirts on ground tiles!) with rich multi-octave
+    1x1 pixel-art grass tufts, rounded river-stone cobblestone paths, oak plank bridges, and shimmering water.
 """
 
 import math
 import os
-import random
 from collections import deque
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
@@ -25,20 +26,23 @@ os.makedirs("assets/tilesets", exist_ok=True)
 os.makedirs("assets/objects", exist_ok=True)
 os.makedirs("assets/ui", exist_ok=True)
 
-PIXEL_SCALE = 2  # 1 logical pixel = 2x2 texels everywhere in the game!
-OUTLINE_RGB = (38, 23, 16)  # Crisp dark-brown pixel outline (#261710) matching reference
+OUTLINE_RGB = (42, 26, 18)
 
 
 # =============================================================================
-# 0. CLEAN FOREGROUND EXTRACTION & CRISP PIXEL-GRID QUANTIZATION (ZERO BLUR!)
+# 0. CLEAN FOREGROUND EXTRACTION & 1:1 CRISP SPRITE FITTING
 # =============================================================================
 def extract_clean_rgba(
     im: Image.Image,
-    white_thresh: int = 230,
-    chroma_thresh: int = 30,
-    min_hole_area: int = 90,
+    white_thresh: int = 232,
+    chroma_thresh: int = 28,
+    min_hole_area: int = 85,
     strip_floor_shadow: bool = False,
 ) -> Image.Image:
+    """
+    Removes exterior white background and large enclosed white holes between branches/roots,
+    producing a clean RGBA image with crisp alpha edges and zero white halo.
+    """
     rgba = np.array(im.convert("RGBA"), dtype=np.uint8)
     h, w, _ = rgba.shape
     r = rgba[:, :, 0].astype(np.int16)
@@ -77,6 +81,15 @@ def extract_clean_rgba(
                     for py, px in comp:
                         bg_mask[py, px] = True
 
+    # Decontaminate 1px boundary next to background so white never fringes the outline
+    near_bg = np.zeros((h, w), dtype=bool)
+    near_bg[1:, :] |= bg_mask[:-1, :]
+    near_bg[:-1, :] |= bg_mask[1:, :]
+    near_bg[:, 1:] |= bg_mask[:, :-1]
+    near_bg[:, :-1] |= bg_mask[:, 1:]
+    fringe = near_bg & (~bg_mask) & (min_c >= 195) & ((max_c - min_c) <= 38)
+    bg_mask |= fringe
+
     rgba[bg_mask, 3] = 0
     return Image.fromarray(rgba, "RGBA")
 
@@ -88,93 +101,72 @@ def crop_to_alpha(im: Image.Image) -> Image.Image:
     return im.crop(bbox)
 
 
-def to_crisp_pixel_art(
+def resize_crisp_1to1(
     im: Image.Image,
-    logical_w: int,
-    logical_h: int,
-    color_step: int = 16,
-    sat_boost: float = 1.18,
-    contrast_boost: float = 1.12,
-    outline_rgb: tuple = OUTLINE_RGB,
+    target_w: int,
+    target_h: int,
+    sat_factor: float = 1.0,
+    contrast_factor: float = 1.04,
+    add_outline: bool = False,
 ) -> Image.Image:
     """
-    Converts a high-res RGBA sprite into a 100% CRISP low-res pixel-art sprite at
-    (logical_w x logical_h) logical pixels:
-      1. Downsamples RGB & Alpha to (logical_w, logical_h) using box/area averaging (no blurry halo)
-      2. Applies a strict binary alpha threshold (alpha = 0 or 255 -> ZERO semi-transparent soapiness!)
-      3. Quantizes colors into clean flat pixel clusters (color_step)
-      4. Enforces a clean, continuous 1-logical-pixel dark brown outline (#261710) around the silhouette
-      5. Upscales by PIXEL_SCALE (2x) using NEAREST so every logical pixel is a razor-sharp 2x2 square!
+    Resizes an RGBA sprite to exact (target_w, target_h) at 1:1 pixel resolution:
+      - Premultiplies RGB before BOX/LANCZOS resampling so background never bleeds into edges
+      - Applies subtle UnsharpMask on RGB so 1x1 pixel details (eyes, leaves, bark, stone facets) are sharp
+      - Thresholds alpha cleanly (>= 105 -> 255, < 105 -> 0) so there is ZERO blurry semi-transparent halo
+        when rendered with TEXTURE_FILTER_NEAREST in Godot!
     """
     rgba = im.convert("RGBA")
     arr = np.array(rgba, dtype=np.float32)
     alpha = arr[:, :, 3:4] / 255.0
 
-    # Premultiply RGB before area downsampling so white background never bleeds into edge pixels
     pre_rgb = arr[:, :, :3] * alpha
     pre_im = Image.fromarray(np.clip(pre_rgb, 0, 255).astype(np.uint8), "RGB")
     a_im = Image.fromarray(arr[:, :, 3].astype(np.uint8), "L")
 
-    small_pre = pre_im.resize((logical_w, logical_h), Image.Resampling.BOX)
-    small_a = a_im.resize((logical_w, logical_h), Image.Resampling.BOX)
+    small_pre = pre_im.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    small_a = a_im.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
     s_pre_arr = np.array(small_pre, dtype=np.float32)
     s_a_arr = np.array(small_a, dtype=np.float32) / 255.0
 
-    # Un-premultiply on solid pixels
-    solid = s_a_arr >= 0.38
+    solid = s_a_arr >= 0.42
     rgb_unpre = np.where(
         s_a_arr[:, :, None] > 0.05,
         s_pre_arr / np.maximum(s_a_arr[:, :, None], 0.05),
         0.0,
     )
     rgb_im = Image.fromarray(np.clip(rgb_unpre, 0, 255).astype(np.uint8), "RGB")
-    rgb_im = ImageEnhance.Color(rgb_im).enhance(sat_boost)
-    rgb_im = ImageEnhance.Contrast(rgb_im).enhance(contrast_boost)
+    if abs(sat_factor - 1.0) > 0.01:
+        rgb_im = ImageEnhance.Color(rgb_im).enhance(sat_factor)
+    if abs(contrast_factor - 1.0) > 0.01:
+        rgb_im = ImageEnhance.Contrast(rgb_im).enhance(contrast_factor)
+    rgb_im = rgb_im.filter(ImageFilter.UnsharpMask(radius=0.75, percent=115, threshold=3))
 
-    q_arr = np.array(rgb_im, dtype=np.float32)
-    # Posterize to clean pixel-art color clusters
-    q_arr = np.round(q_arr / float(color_step)) * float(color_step)
-    q_arr = np.clip(q_arr, 0, 255).astype(np.uint8)
+    out = np.zeros((target_h, target_w, 4), dtype=np.uint8)
+    rgb_final = np.array(rgb_im, dtype=np.uint8)
+    out[solid, :3] = rgb_final[solid]
+    out[solid, 3] = 255
 
-    out_small = np.zeros((logical_h, logical_w, 4), dtype=np.uint8)
-    out_small[solid, :3] = q_arr[solid]
-    out_small[solid, 3] = 255  # 100% opaque or 100% transparent — ZERO blurry semi-transparency!
-
-    # Remove isolated single stray pixels
-    for y in range(logical_h):
-        for x in range(logical_w):
-            if out_small[y, x, 3] > 0:
-                neighbors = 0
-                for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-                    if 0 <= ny < logical_h and 0 <= nx < logical_w and out_small[ny, nx, 3] > 0:
-                        neighbors += 1
-                if neighbors == 0:
-                    out_small[y, x] = (0, 0, 0, 0)
-
-    # Apply crisp 1-logical-pixel dark brown outline on exterior boundary pixels
-    if outline_rgb is not None:
-        is_solid = out_small[:, :, 3] > 0
-        is_edge = np.zeros((logical_h, logical_w), dtype=bool)
-        for y in range(logical_h):
-            for x in range(logical_w):
+    if add_outline:
+        is_solid = out[:, :, 3] > 0
+        for y in range(target_h):
+            for x in range(target_w):
                 if is_solid[y, x]:
                     if (
-                        y == 0 or y == logical_h - 1 or x == 0 or x == logical_w - 1
+                        y == 0 or y == target_h - 1 or x == 0 or x == target_w - 1
                         or not is_solid[y - 1, x] or not is_solid[y + 1, x]
                         or not is_solid[y, x - 1] or not is_solid[y, x + 1]
                     ):
-                        is_edge[y, x] = True
-        # Blend edge pixel 65% toward dark brown outline so outline is crisp and colored
-        out_small[is_edge, 0] = ((out_small[is_edge, 0].astype(np.int16) * 35 + outline_rgb[0] * 65) // 100).astype(np.uint8)
-        out_small[is_edge, 1] = ((out_small[is_edge, 1].astype(np.int16) * 35 + outline_rgb[1] * 65) // 100).astype(np.uint8)
-        out_small[is_edge, 2] = ((out_small[is_edge, 2].astype(np.int16) * 35 + outline_rgb[2] * 65) // 100).astype(np.uint8)
+                        # Subtle dark-brown edge darkening for un-outlined rocks
+                        out[y, x, 0] = int((int(out[y, x, 0]) * 45 + OUTLINE_RGB[0] * 55) // 100)
+                        out[y, x, 1] = int((int(out[y, x, 1]) * 45 + OUTLINE_RGB[1] * 55) // 100)
+                        out[y, x, 2] = int((int(out[y, x, 2]) * 45 + OUTLINE_RGB[2] * 55) // 100)
 
-    small_rgba = Image.fromarray(out_small, "RGBA")
-    return small_rgba.resize((logical_w * PIXEL_SCALE, logical_h * PIXEL_SCALE), Image.Resampling.NEAREST)
+    return Image.fromarray(out, "RGBA")
 
 
-def fit_crisp_pixel_object(
+def fit_object_1to1(
     im: Image.Image,
     target_w: int,
     target_h: int,
@@ -182,140 +174,155 @@ def fit_crisp_pixel_object(
     shadow_rx: int = 28,
     shadow_ry: int = 12,
     shadow_y_off: int = -8,
-    color_step: int = 16,
-    sat_boost: float = 1.22,
+    sat_factor: float = 1.0,
+    contrast_factor: float = 1.04,
+    add_outline: bool = False,
 ) -> Image.Image:
     """
-    Fits an object onto (target_w x target_h) canvas on the exact 2x2 logical pixel grid
-    with a crisp pixel-art elliptical ground shadow (zero Gaussian blur!).
+    Fits an object onto (target_w x target_h) at full 1:1 pixel resolution with a clean
+    pixel-art ground shadow ellipse.
     """
     cropped = crop_to_alpha(im)
     cw, ch = cropped.size
 
-    log_canvas_w = target_w // PIXEL_SCALE
-    log_canvas_h = target_h // PIXEL_SCALE
-    log_bpad = bottom_pad // PIXEL_SCALE
-
-    avail_w = log_canvas_w - 4
-    avail_h = log_canvas_h - log_bpad - 2
+    avail_w = target_w - 8
+    avail_h = target_h - bottom_pad - 4
     scale = min(avail_w / float(cw), avail_h / float(ch))
-    log_w = max(1, int(round(cw * scale)))
-    log_h = max(1, int(round(ch * scale)))
+    new_w = max(1, int(round(cw * scale)))
+    new_h = max(1, int(round(ch * scale)))
 
-    crisp_sprite = to_crisp_pixel_art(
+    resized = resize_crisp_1to1(
         cropped,
-        log_w,
-        log_h,
-        color_step=color_step,
-        sat_boost=sat_boost,
-        contrast_boost=1.14,
-        outline_rgb=OUTLINE_RGB,
+        new_w,
+        new_h,
+        sat_factor=sat_factor,
+        contrast_factor=contrast_factor,
+        add_outline=add_outline,
     )
 
-    # Draw crisp pixel-art shadow at logical resolution, then upscale 2x with NEAREST
-    shadow_log = Image.new("RGBA", (log_canvas_w, log_canvas_h), (0, 0, 0, 0))
-    s_draw = ImageDraw.Draw(shadow_log)
-    scx = log_canvas_w // 2
-    scy = log_canvas_h - log_bpad + (shadow_y_off // PIXEL_SCALE)
-    srx = shadow_rx // PIXEL_SCALE
-    sry = shadow_ry // PIXEL_SCALE
+    canvas = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    s_draw = ImageDraw.Draw(canvas)
+    scx = target_w // 2
+    scy = target_h - bottom_pad + shadow_y_off
     s_draw.ellipse(
-        [scx - srx, scy - sry, scx + srx, scy + sry],
-        fill=(18, 24, 32, 95),
+        [scx - shadow_rx, scy - shadow_ry, scx + shadow_rx, scy + shadow_ry],
+        fill=(18, 26, 32, 82),
     )
-    canvas = shadow_log.resize((target_w, target_h), Image.Resampling.NEAREST)
 
-    paste_x = ((log_canvas_w - log_w) // 2) * PIXEL_SCALE
-    paste_y = (log_canvas_h - log_bpad - log_h) * PIXEL_SCALE
-    canvas.alpha_composite(crisp_sprite, (paste_x, paste_y))
+    paste_x = (target_w - new_w) // 2
+    paste_y = target_h - bottom_pad - new_h
+    canvas.alpha_composite(resized, (paste_x, paste_y))
     return canvas
 
 
-def recolor_oak_to_stardew_sakura(oak_im: Image.Image) -> Image.Image:
-    arr = np.array(oak_im.convert("RGBA"), dtype=np.float32)
+def harmonize_willow_palette(im: Image.Image) -> Image.Image:
+    """
+    Shifts the overly cyan/mint hue of sdv_tree_willow.png toward a warm, natural
+    Stardew Valley sage-emerald green while preserving its bark and dark outlines.
+    """
+    arr = np.array(im.convert("RGBA"), dtype=np.float32)
     r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
-    is_foliage = (a > 20) & (g > r + 10)
-    lum = (r * 0.25 + g * 0.65 + b * 0.10) / 255.0
-    new_r = np.clip(148.0 + lum * 135.0, 0, 255)
-    new_g = np.clip(50.0 + (lum ** 1.25) * 195.0, 0, 255)
-    new_b = np.clip(90.0 + (lum ** 1.15) * 165.0, 0, 255)
-    arr[:, :, 0] = np.where(is_foliage, new_r, r)
-    arr[:, :, 1] = np.where(is_foliage, new_g, g)
-    arr[:, :, 2] = np.where(is_foliage, new_b, b)
+    # Foliage mask: green is dominant over red
+    is_leaf = (a > 0) & (g > r * 1.08)
+    # Warm up red channel slightly, tone down excessive blue/cyan, and keep natural green
+    arr[is_leaf, 0] = np.clip(r[is_leaf] * 1.12 + 14.0, 0, 255)
+    arr[is_leaf, 1] = np.clip(g[is_leaf] * 0.90, 0, 255)
+    arr[is_leaf, 2] = np.clip(b[is_leaf] * 0.68, 0, 255)
+    return Image.fromarray(arr.astype(np.uint8), "RGBA")
+
+
+def harmonize_oak_palette(im: Image.Image) -> Image.Image:
+    """
+    Softens overly neon lime highlights on sdv_tree_oak.png into warm Stardew forest green.
+    """
+    arr = np.array(im.convert("RGBA"), dtype=np.float32)
+    r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+    is_leaf = (a > 0) & (g > r * 1.05)
+    arr[is_leaf, 0] = np.clip(r[is_leaf] * 1.08 + 10.0, 0, 255)
+    arr[is_leaf, 1] = np.clip(g[is_leaf] * 0.88, 0, 255)
+    arr[is_leaf, 2] = np.clip(b[is_leaf] * 0.92 + 8.0, 0, 255)
+    return Image.fromarray(arr.astype(np.uint8), "RGBA")
+
+
+def tint_foliage_warm_cherry(im: Image.Image) -> Image.Image:
+    arr = np.array(im.convert("RGBA"), dtype=np.float32)
+    r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+    is_leaf = (a > 0) & (g > r * 0.92) & (g > 45)
+    lum = 0.28 * r + 0.58 * g + 0.14 * b
+    arr[is_leaf, 0] = np.clip(lum[is_leaf] * 1.32 + 52.0, 0, 255)
+    arr[is_leaf, 1] = np.clip(lum[is_leaf] * 0.72 + 24.0, 0, 255)
+    arr[is_leaf, 2] = np.clip(lum[is_leaf] * 0.96 + 42.0, 0, 255)
     return Image.fromarray(arr.astype(np.uint8), "RGBA")
 
 
 # =============================================================================
-# 1. BUILD 19 CRISP PIXEL-ART WORLD OBJECTS (8 Trees, 8 Rocks, 3 Props)
+# 1. BUILD ALL 19 WORLD OBJECTS (8 TREES + 8 PURE ROCKS + 3 DEDICATED PROPS)
 # =============================================================================
 def build_world_objects() -> None:
-    print("Building 19 crisp low-res pixel-art world objects (zero blur)...")
+    print("Building 19 high-clarity 1:1 pixel-art world objects...")
 
-    sdv_oak = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_oak.png"), min_hole_area=90)
-    sdv_willow = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_willow.png"), min_hole_area=90)
-    sdv_pine = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_pine.png"), min_hole_area=90)
-    sdv_birch = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_birch.png"), min_hole_area=280)
-    sdv_maple = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_maple.png"), min_hole_area=90)
-    sdv_cherry = recolor_oak_to_stardew_sakura(sdv_oak)
-    sdv_cedar = extract_clean_rgba(Image.open("assets/ai_raw/iso_tree_ancient_fir.png"), min_hole_area=90)
-    sdv_poplar = extract_clean_rgba(Image.open("assets/ai_raw/iso_tree_poplar.png"), min_hole_area=90)
+    # --- 8 Isometric Trees ---
+    oak_raw = harmonize_oak_palette(extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_oak.png"), min_hole_area=70))
+    fit_object_1to1(oak_raw, 156, 186, 8, 44, 18, -10, sat_factor=0.96).save("assets/objects/tree_oak.png")
 
-    tree_outputs = [
-        (sdv_oak,    "assets/objects/tree_oak.png",    160, 176, 8, 42, 18, -12, 16, 1.20),
-        (sdv_willow, "assets/objects/tree_willow.png", 168, 176, 8, 46, 19, -12, 16, 1.20),
-        (sdv_pine,   "assets/objects/tree_pine.png",   144, 192, 8, 34, 15, -10, 16, 1.22),
-        (sdv_birch,  "assets/objects/tree_birch.png",  144, 176, 8, 34, 15, -10, 16, 1.22),
-        (sdv_maple,  "assets/objects/tree_maple.png",  160, 176, 8, 42, 18, -12, 16, 1.22),
-        (sdv_cherry, "assets/objects/tree_cherry.png", 168, 176, 8, 44, 18, -12, 16, 1.22),
-        (sdv_cedar,  "assets/objects/tree_cedar.png",  152, 192, 8, 38, 16, -10, 18, 1.30),
-        (sdv_poplar, "assets/objects/tree_poplar.png", 128, 196, 8, 30, 14, -10, 18, 1.30),
-    ]
-    for clean_im, dst_path, tw, th, bpad, srx, sry, syoff, cstep, sat in tree_outputs:
-        out = fit_crisp_pixel_object(clean_im, tw, th, bpad, srx, sry, syoff, color_step=cstep, sat_boost=sat)
-        out.save(dst_path)
+    willow_raw = harmonize_willow_palette(extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_willow.png"), min_hole_area=70))
+    fit_object_1to1(willow_raw, 168, 192, 8, 50, 20, -12, sat_factor=0.95).save("assets/objects/tree_willow.png")
 
-    rock_specs = [
-        ("assets/ai_raw/iso_rock_boulder.png",       "assets/objects/rock_large.png",     112, 96, 6, 42, 18, -12, 90),
-        ("assets/ai_raw/iso_rock_slate.png",         "assets/objects/rock_slate.png",     112, 96, 6, 42, 18, -12, 90),
-        ("assets/ai_raw/iso_rock_sandstone.png",     "assets/objects/rock_sandstone.png", 116, 96, 6, 44, 19, -12, 80),
-        ("assets/ai_raw/iso_rock_mossy_cluster.png", "assets/objects/rock_river.png",     108, 88, 6, 42, 18, -11, 250),
-        ("assets/ai_raw/iso_rock_limestone.png",     "assets/objects/rock_limestone.png", 112, 92, 6, 42, 18, -11, 200),
-        ("assets/ai_raw/iso_rock_basalt.png",        "assets/objects/rock_basalt.png",    116, 96, 6, 44, 19, -12, 120),
-        ("assets/ai_raw/iso_rock_flat_stepping.png", "assets/objects/rock_flat.png",      116, 88, 6, 44, 18, -11, 150),
-        ("assets/ai_raw/iso_rock_limestone.png",     "assets/objects/rock_small.png",      72, 60, 4, 26, 11, -7,  200),
-    ]
-    for src_path, dst_path, tw, th, bpad, srx, sry, syoff, min_hole in rock_specs:
-        clean = extract_clean_rgba(Image.open(src_path), min_hole_area=min_hole)
-        out = fit_crisp_pixel_object(clean, tw, th, bpad, srx, sry, syoff, color_step=18, sat_boost=1.25)
-        out.save(dst_path)
+    pine_raw = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_pine.png"), min_hole_area=70)
+    fit_object_1to1(pine_raw, 136, 198, 8, 38, 16, -10, sat_factor=1.02).save("assets/objects/tree_pine.png")
 
-    # 3 Crisp Pixel-Art Forest Props
-    oak_crop = crop_to_alpha(sdv_oak)
-    ow, oh = oak_crop.size
-    trunk_slice = oak_crop.crop((int(ow * 0.22), int(oh * 0.58), int(ow * 0.78), oh))
-    s_draw = ImageDraw.Draw(trunk_slice)
-    tw_s, th_s = trunk_slice.size
-    s_draw.ellipse([int(tw_s * 0.18), 2, int(tw_s * 0.82), int(th_s * 0.36)], fill=(64, 34, 18, 255))
-    s_draw.ellipse([int(tw_s * 0.22), 6, int(tw_s * 0.78), int(th_s * 0.32)], fill=(228, 174, 108, 255))
-    s_draw.ellipse([int(tw_s * 0.32), 12, int(tw_s * 0.68), int(th_s * 0.26)], fill=(188, 132, 74, 255))
-    fit_crisp_pixel_object(trunk_slice, 64, 56, 6, 22, 10, -6, color_step=16, sat_boost=1.20).save("assets/objects/tree_stump.png")
+    birch_raw = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_birch.png"), min_hole_area=65)
+    fit_object_1to1(birch_raw, 140, 190, 8, 36, 15, -10, sat_factor=1.0).save("assets/objects/tree_birch.png")
 
-    canopy_cluster = oak_crop.crop((int(ow * 0.14), int(oh * 0.04), int(ow * 0.86), int(oh * 0.56)))
-    cw_c, ch_c = canopy_cluster.size
-    b_draw = ImageDraw.Draw(canopy_cluster)
-    for bx_f, by_f in [(0.30, 0.40), (0.46, 0.28), (0.64, 0.34), (0.72, 0.52), (0.38, 0.62), (0.55, 0.54)]:
-        bx, by = int(cw_c * bx_f), int(ch_c * by_f)
-        r_b = max(8, int(cw_c * 0.045))
-        b_draw.ellipse([bx - r_b, by - r_b, bx + r_b, by + r_b], fill=(232, 46, 64, 255), outline=(92, 16, 26, 255), width=3)
-    fit_crisp_pixel_object(canopy_cluster, 68, 60, 6, 25, 11, -7, color_step=16, sat_boost=1.22).save("assets/objects/bush_berry.png")
+    maple_raw = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_maple.png"), min_hole_area=70)
+    fit_object_1to1(maple_raw, 154, 188, 8, 44, 18, -10, sat_factor=1.02).save("assets/objects/tree_maple.png")
 
-    bark_rot = trunk_slice.rotate(72, expand=True, resample=Image.Resampling.NEAREST)
-    fit_crisp_pixel_object(bark_rot, 96, 56, 6, 36, 12, -6, color_step=16, sat_boost=1.20).save("assets/objects/log_fallen.png")
+    cherry_raw = tint_foliage_warm_cherry(oak_raw)
+    fit_object_1to1(cherry_raw, 156, 186, 8, 44, 18, -10, sat_factor=1.0).save("assets/objects/tree_cherry.png")
+
+    cedar_raw = extract_clean_rgba(Image.open("assets/ai_raw/iso_tree_ancient_fir.png"), min_hole_area=70)
+    fit_object_1to1(cedar_raw, 144, 204, 8, 40, 17, -10, sat_factor=1.05, add_outline=True).save("assets/objects/tree_cedar.png")
+
+    poplar_raw = extract_clean_rgba(Image.open("assets/ai_raw/iso_tree_poplar.png"), min_hole_area=70)
+    fit_object_1to1(poplar_raw, 118, 204, 8, 32, 14, -9, sat_factor=1.04, add_outline=True).save("assets/objects/tree_poplar.png")
+
+    # --- 8 Pure Natural Isometric Rocks (ZERO ORE) ---
+    boulder = extract_clean_rgba(Image.open("assets/ai_raw/iso_rock_boulder.png"))
+    fit_object_1to1(boulder, 88, 72, 6, 33, 14, -9, sat_factor=0.95, add_outline=True).save("assets/objects/rock_large.png")
+
+    slate = extract_clean_rgba(Image.open("assets/ai_raw/iso_rock_slate.png"))
+    fit_object_1to1(slate, 84, 68, 6, 30, 13, -8, sat_factor=0.98, add_outline=True).save("assets/objects/rock_slate.png")
+
+    sandstone = extract_clean_rgba(Image.open("assets/ai_raw/iso_rock_sandstone.png"))
+    fit_object_1to1(sandstone, 88, 70, 6, 32, 14, -8, sat_factor=0.98, add_outline=True).save("assets/objects/rock_sandstone.png")
+
+    mossy_cluster = extract_clean_rgba(Image.open("assets/ai_raw/iso_rock_mossy_cluster.png"))
+    fit_object_1to1(mossy_cluster, 82, 62, 6, 30, 12, -8, sat_factor=0.95, add_outline=True).save("assets/objects/rock_river.png")
+
+    limestone = extract_clean_rgba(Image.open("assets/ai_raw/iso_rock_limestone.png"))
+    fit_object_1to1(limestone, 84, 66, 6, 30, 13, -8, sat_factor=0.98, add_outline=True).save("assets/objects/rock_limestone.png")
+
+    basalt = extract_clean_rgba(Image.open("assets/ai_raw/iso_rock_basalt.png"))
+    fit_object_1to1(basalt, 84, 72, 6, 30, 13, -8, sat_factor=0.98, add_outline=True).save("assets/objects/rock_basalt.png")
+
+    flat_rock = extract_clean_rgba(Image.open("assets/ai_raw/iso_rock_flat_stepping.png"))
+    fit_object_1to1(flat_rock, 78, 52, 5, 28, 11, -7, sat_factor=0.96, add_outline=True).save("assets/objects/rock_flat.png")
+
+    fit_object_1to1(mossy_cluster, 58, 46, 5, 21, 9, -6, sat_factor=0.95, add_outline=True).save("assets/objects/rock_small.png")
+
+    # --- 3 Dedicated Isometric Forest Props (Stump, Berry Bush, Fallen Log) ---
+    stump_raw = extract_clean_rgba(Image.open("assets/ai_raw/sdv_tree_stump.png"), min_hole_area=60)
+    fit_object_1to1(stump_raw, 64, 52, 5, 23, 10, -6, sat_factor=1.0).save("assets/objects/tree_stump.png")
+
+    bush_raw = extract_clean_rgba(Image.open("assets/ai_raw/sdv_bush_berry.png"), min_hole_area=45)
+    fit_object_1to1(bush_raw, 68, 60, 6, 25, 11, -7, sat_factor=1.0).save("assets/objects/bush_berry.png")
+
+    log_raw = extract_clean_rgba(Image.open("assets/ai_raw/sdv_log_fallen.png"), min_hole_area=60)
+    fit_object_1to1(log_raw, 96, 56, 6, 34, 12, -6, sat_factor=1.0).save("assets/objects/log_fallen.png")
 
 
 # =============================================================================
-# 2. CRISP PIXEL-ART EXPLORER (~16x34 LOGICAL PIXELS = 68PX TALL AT 2X NEAREST)
-#    Matches the exact pixel count of the user's reference image!
+# 2. HIGH-CLARITY 1:1 STARDEW EXPLORER (96x96 FRAMES, 74PX TALL, READABLE FACE!)
 # =============================================================================
 DIRECTIONS = [
     "down",        # 0: S
@@ -380,7 +387,7 @@ def bilinear_warp_rgba(arr: np.ndarray, src_x: np.ndarray, src_y: np.ndarray) ->
     return out
 
 
-def render_crisp_explorer_frame(
+def render_explorer_frame_1to1(
     hi_pose: Image.Image,
     dir_name: str,
     anim_name: str,
@@ -388,14 +395,12 @@ def render_crisp_explorer_frame(
     total_frames: int,
 ) -> Image.Image:
     """
-    Deforms the high-res pose smoothly, then quantizes the frame onto a crisp 48x48 logical
-    pixel grid (where the character is 34 logical pixels tall x ~16 logical pixels wide,
-    matching the user's reference image!), applies a crisp 1-logical-pixel dark outline,
-    and scales 2x with NEAREST to 96x96!
+    Deforms the high-res pose smoothly, then resamples directly to 74px tall at 1:1 pixel
+    resolution on the 96x96 canvas with binary alpha and crisp UnsharpMask so the character's
+    eyes, hair, collar, vest, and boots are 100% clear and readable!
     """
     phase = (frame_idx / float(total_frames)) * 2.0 * math.pi
     s1 = math.sin(phase)
-    c1 = math.cos(phase)
     smooth_bob = 0.5 * (1.0 - math.cos(2.0 * phase))
     bell = math.sin((frame_idx / float(total_frames)) * math.pi) ** 2
 
@@ -418,133 +423,116 @@ def render_crisp_explorer_frame(
 
     src_x = xx.copy()
     src_y = yy.copy()
-    whole_bob_log = 0
+    whole_bob_px = 0
 
     if anim_name == "idle":
-        breath = s1 * 2.2
+        breath = s1 * 1.8
         src_y -= breath * w_upper
 
     elif anim_name == "walk":
-        whole_bob_log = -1 if smooth_bob > 0.55 else 0
+        whole_bob_px = int(round(-1.5 * smooth_bob))
         side_sign = np.tanh(x_rel * 2.5)
-        src_y -= s1 * side_sign * 6.5 * w_leg
-        src_x -= s1 * 2.8 * w_leg
-        src_x += s1 * 2.0 * w_upper * (y_norm * 0.8)
+        src_y -= s1 * side_sign * 5.8 * w_leg
+        src_x -= s1 * 2.4 * w_leg
+        src_x += s1 * 1.8 * w_upper * (y_norm * 0.8)
 
     elif anim_name == "run":
-        whole_bob_log = -1 if smooth_bob > 0.35 else 0
+        whole_bob_px = int(round(-2.2 * smooth_bob))
         side_sign = np.tanh(x_rel * 2.5)
-        lean_amount = (dx if dx != 0 else 0.3) * 4.2 * (1.0 - y_norm)
+        lean_amount = (dx if dx != 0 else 0.3) * 3.8 * (1.0 - y_norm)
         src_x -= lean_amount
-        src_y -= s1 * side_sign * 8.5 * w_leg
-        src_x -= s1 * 3.8 * w_leg
-        src_x += s1 * 3.0 * w_upper * y_norm
+        src_y -= s1 * side_sign * 7.8 * w_leg
+        src_x -= s1 * 3.4 * w_leg
+        src_x += s1 * 2.6 * w_upper * y_norm
 
     elif anim_name in ("axe", "pickaxe"):
         swing_wave = math.sin(phase) * bell
-        lean = swing_wave * (dx if dx != 0 else 0.4) * 5.0 * w_upper
+        lean = swing_wave * (dx if dx != 0 else 0.4) * 4.5 * w_upper
         src_x -= lean
-        src_y -= swing_wave * 3.5 * w_upper
+        src_y -= swing_wave * 3.0 * w_upper
 
     elif anim_name == "water":
-        src_x -= bell * (dx if dx != 0 else 0.4) * 4.2 * w_upper
-        src_y -= bell * 3.0 * w_upper
+        src_x -= bell * (dx if dx != 0 else 0.4) * 3.8 * w_upper
+        src_y -= bell * 2.6 * w_upper
 
     elif anim_name == "interact":
-        whole_bob_log = -1 if bell > 0.5 else 0
-        src_y += bell * 3.2 * w_upper * np.clip(x_rel, 0.0, 1.0)
+        whole_bob_px = int(round(-1.5 * bell))
+        src_y += bell * 2.8 * w_upper * np.clip(x_rel, 0.0, 1.0)
 
     warped_arr = bilinear_warp_rgba(arr, src_x, src_y)
     warped_crop = crop_to_alpha(Image.fromarray(warped_arr, "RGBA"))
 
-    # Target logical character height: 34 logical pixels (~15-16 logical pixels wide),
-    # which is the EXACT pixel density of the user's reference image!
-    LOG_CHAR_H = 34
+    CHAR_H = 74
     wc_w, wc_h = warped_crop.size
-    log_char_w = max(12, int(round(wc_w * (LOG_CHAR_H / float(max(1, wc_h))))))
+    char_w = max(24, int(round(wc_w * (CHAR_H / float(max(1, wc_h))))))
 
-    crisp_char = to_crisp_pixel_art(
+    crisp_char = resize_crisp_1to1(
         warped_crop,
-        log_char_w,
-        LOG_CHAR_H,
-        color_step=16,
-        sat_boost=1.16,
-        contrast_boost=1.12,
-        outline_rgb=OUTLINE_RGB,
+        char_w,
+        CHAR_H,
+        sat_factor=1.04,
+        contrast_factor=1.06,
+        add_outline=False,
     )
 
-    # Place onto 48x48 logical canvas (96x96 texels at PIXEL_SCALE=2)
-    LOG_CANVAS = 48
-    shadow_log = Image.new("RGBA", (LOG_CANVAS, LOG_CANVAS), (0, 0, 0, 0))
-    s_draw = ImageDraw.Draw(shadow_log)
-    s_draw.ellipse([24 - 7, 42 - 3, 24 + 7, 42 + 3], fill=(18, 24, 32, 95))
-    canvas = shadow_log.resize((96, 96), Image.Resampling.NEAREST)
+    canvas = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
+    s_draw = ImageDraw.Draw(canvas)
+    s_draw.ellipse([48 - 14, 84 - 6, 48 + 14, 84 + 6], fill=(18, 24, 32, 85))
 
-    paste_x = ((LOG_CANVAS - log_char_w) // 2) * PIXEL_SCALE
-    paste_y = (43 - LOG_CHAR_H + whole_bob_log) * PIXEL_SCALE
+    paste_x = (96 - char_w) // 2
+    paste_y = 86 - CHAR_H + whole_bob_px
     canvas.alpha_composite(crisp_char, (paste_x, paste_y))
 
-    # Draw crisp low-res pixel-art tool overlays ONLY during action animations
+    # Draw 1:1 pixel-art tool overlays during action animations
     if anim_name in ("axe", "pickaxe", "water", "interact"):
-        tool_log = Image.new("RGBA", (LOG_CANVAS, LOG_CANVAS), (0, 0, 0, 0))
-        td = ImageDraw.Draw(tool_log)
+        tool_layer = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
+        td = ImageDraw.Draw(tool_layer)
         facing_x = -1 if "left" in dir_name else (1 if "right" in dir_name else 1)
-        hx = 24 + facing_x * 5
-        hy = 27 + whole_bob_log
+        hx = 48 + facing_x * 10
+        hy = 54 + whole_bob_px
 
         if anim_name in ("axe", "pickaxe"):
             swing_t = frame_idx / float(max(1, total_frames - 1))
             ang = (-1.15 + swing_t * 2.1) * facing_x
-            tx = int(round(hx + math.sin(ang) * 8))
-            ty = int(round(hy - math.cos(ang) * 8))
-            # Wooden handle
-            td.line([(hx, hy), (tx, ty)], fill=(158, 102, 54, 255), width=1)
-            px = int(round(math.cos(ang) * 3))
-            py = int(round(math.sin(ang) * 3))
+            tx = int(round(hx + math.sin(ang) * 16))
+            ty = int(round(hy - math.cos(ang) * 16))
+            td.line([(hx, hy), (tx, ty)], fill=(42, 26, 18, 255), width=4)
+            td.line([(hx, hy), (tx, ty)], fill=(168, 108, 56, 255), width=2)
+            px = int(round(math.cos(ang) * 6))
+            py = int(round(math.sin(ang) * 6))
             if anim_name == "axe":
-                td.polygon(
-                    [(tx, ty), (tx + px, ty + py - 1), (tx + px + facing_x, ty + py + 2)],
-                    fill=(208, 218, 230, 255),
-                )
+                blade = [(tx, ty), (tx + px, ty + py - 3), (tx + px + facing_x * 3, ty + py + 4)]
+                td.polygon(blade, fill=(214, 224, 236, 255), outline=(42, 26, 18, 255))
             else:
-                td.line([(tx - px, ty - py), (tx + px, ty + py)], fill=(192, 204, 218, 255), width=1)
+                td.line([(tx - px, ty - py), (tx + px, ty + py)], fill=(42, 26, 18, 255), width=4)
+                td.line([(tx - px, ty - py), (tx + px, ty + py)], fill=(198, 210, 224, 255), width=2)
         elif anim_name == "water":
-            cx = hx + facing_x * 4
-            cy = hy + 1 + (1 if bell > 0.4 else 0)
-            td.rectangle([cx - 2, cy - 2, cx + 2, cy + 1], fill=(92, 162, 216, 255))
-            spout_x = cx + facing_x * 4
-            td.line([(cx + facing_x * 2, cy - 1), (spout_x, cy + 1)], fill=(120, 188, 238, 255), width=1)
+            cx = hx + facing_x * 8
+            cy = hy + 2 + int(round(bell * 3))
+            td.rectangle([cx - 5, cy - 4, cx + 5, cy + 4], fill=(92, 164, 218, 255), outline=(42, 26, 18, 255))
+            spout_x = cx + facing_x * 9
+            td.line([(cx + facing_x * 5, cy - 1), (spout_x, cy + 2)], fill=(42, 26, 18, 255), width=3)
+            td.line([(cx + facing_x * 5, cy - 1), (spout_x, cy + 2)], fill=(128, 194, 242, 255), width=1)
             if frame_idx in (2, 3, 4, 5):
-                drop_y = cy + 2 + ((frame_idx - 2) % 3)
-                td.point((spout_x + facing_x, drop_y), fill=(116, 206, 255, 255))
-                td.point((spout_x, drop_y + 2), fill=(160, 228, 255, 255))
+                for d_i in range(3):
+                    drop_y = cy + 5 + ((frame_idx * 2 + d_i * 3) % 8)
+                    drop_x = spout_x + facing_x * (1 + d_i)
+                    td.ellipse([drop_x - 1, drop_y - 1, drop_x + 1, drop_y + 1], fill=(135, 216, 255, 255))
         elif anim_name == "interact":
             if frame_idx in (1, 2, 3, 4, 5):
-                sx = 24 + facing_x * 8
-                sy = 21 - (1 if bell > 0.5 else 0)
-                td.line([(sx - 2, sy), (sx + 2, sy)], fill=(255, 232, 120, 255), width=1)
-                td.line([(sx, sy - 2), (sx, sy + 2)], fill=(255, 232, 120, 255), width=1)
-                td.point((sx, sy), fill=(255, 252, 215, 255))
+                sx = 48 + facing_x * 16
+                sy = 42 - int(round(bell * 3))
+                td.line([(sx - 4, sy), (sx + 4, sy)], fill=(255, 232, 115, 255), width=2)
+                td.line([(sx, sy - 4), (sx, sy + 4)], fill=(255, 232, 115, 255), width=2)
+                td.rectangle([sx - 1, sy - 1, sx + 1, sy + 1], fill=(255, 252, 220, 255))
 
-        t_arr = np.array(tool_log, dtype=np.uint8)
-        th, tw, _ = t_arr.shape
-        t_solid = t_arr[:, :, 3] > 0
-        for ty_i in range(1, th - 1):
-            for tx_i in range(1, tw - 1):
-                if not t_solid[ty_i, tx_i]:
-                    if (
-                        t_solid[ty_i - 1, tx_i] or t_solid[ty_i + 1, tx_i]
-                        or t_solid[ty_i, tx_i - 1] or t_solid[ty_i, tx_i + 1]
-                    ):
-                        t_arr[ty_i, tx_i] = (OUTLINE_RGB[0], OUTLINE_RGB[1], OUTLINE_RGB[2], 255)
-        tool_crisp = Image.fromarray(t_arr, "RGBA").resize((96, 96), Image.Resampling.NEAREST)
-        canvas.alpha_composite(tool_crisp, (0, 0))
+        canvas.alpha_composite(tool_layer, (0, 0))
 
     return canvas
 
 
 def build_explorer_spritesheet() -> None:
-    print("Building Crisp Low-Res Pixel-Art Explorer Spritesheet (~16x34 logical pixels, 2x NEAREST)...")
+    print("Building High-Clarity 1:1 Explorer Spritesheet (74px tall on 96x96 frames)...")
     south_clean = crop_to_alpha(extract_clean_rgba(Image.open("assets/ai_raw/sdv_explorer_south.png"), min_hole_area=120, strip_floor_shadow=True))
     front_sw_clean = crop_to_alpha(extract_clean_rgba(Image.open("assets/ai_raw/sdv_explorer_front.png"), min_hole_area=120, strip_floor_shadow=True))
     side_e_clean = crop_to_alpha(extract_clean_rgba(Image.open("assets/ai_raw/sdv_explorer_side.png"), min_hole_area=120, strip_floor_shadow=True))
@@ -589,7 +577,7 @@ def build_explorer_spritesheet() -> None:
         for d_idx, dir_name in enumerate(DIRECTIONS):
             pose_hi = dir_poses[dir_name]
             for col_idx in range(cols):
-                frame_im = render_crisp_explorer_frame(pose_hi, dir_name, anim_name, col_idx, frame_count)
+                frame_im = render_explorer_frame_1to1(pose_hi, dir_name, anim_name, col_idx, frame_count)
                 sheet.alpha_composite(frame_im, (col_idx * frame_size, row_idx * frame_size))
                 if col_idx == sample_f:
                     cx0, cy0 = d_idx * frame_size, a_idx * frame_size
@@ -605,275 +593,455 @@ def build_explorer_spritesheet() -> None:
     idraw = ImageDraw.Draw(icon)
     idraw.ellipse([12, 78, 116, 118], fill=(232, 182, 112, 255))
     idraw.ellipse([18, 80, 110, 114], fill=(92, 182, 78, 255))
-    hero_icon = render_crisp_explorer_frame(p_down_right, "down_right", "idle", 0, 8)
+    hero_icon = render_explorer_frame_1to1(p_down_right, "down_right", "idle", 0, 8)
     icon.alpha_composite(hero_icon, (16, 16))
     icon.save("icon.png")
-    print(f"Saved crisp pixel-art Explorer spritesheet ({sheet.size[0]}x{sheet.size[1]})")
+    print(f"Saved 1:1 Explorer spritesheet ({sheet.size[0]}x{sheet.size[1]})")
 
 
 # =============================================================================
-# 3. CRISP PIXEL-ART ISOMETRIC TILESET (32x20 LOGICAL PIXELS SCALED 2X NEAREST -> 64x40)
-#    Zero blur, rich hand-crafted pixel-art grass blades, cobbles, planks, and ripples!
+# 3. SEAMLESS 1:1 PIXEL-ART ISOMETRIC TILESET (64x40 CELLS, FLUSH 64x32 DIAMONDS)
+#    Zero protruding 3D cliff skirts on ground tiles, harmonious Stardew Valley
+#    palette, soft organic grass blade clusters, natural cobblestone roads & bridges!
 # =============================================================================
-def build_crisp_isometric_tileset() -> None:
-    print("Building Crisp Pixel-Art Isometric Tileset (1024x200, 2x NEAREST from 32x20 logical grid)...")
-    LOG_W = 32
-    LOG_H = 16
-    LOG_SKIRT = 4
-    LOG_CELL_H = LOG_H + LOG_SKIRT  # 20 logical pixels -> 40 texels at 2x NEAREST
-    COLS, ROWS = 16, 5
+TILE_W = 64
+TILE_H = 32
+CELL_H = 40
 
-    hw = LOG_W / 2.0  # 16.0
-    hh = LOG_H / 2.0  # 8.0
 
-    yy, xx = np.meshgrid(np.arange(LOG_CELL_H, dtype=np.float32), np.arange(LOG_W, dtype=np.float32), indexing="ij")
-    # Crisp Manhattan diamond mask on 32x16 logical grid
-    dx = np.abs(xx + 0.5 - hw) / hw
-    dy = np.abs(yy + 0.5 - hh) / hh
-    in_diamond = (dx + dy <= 1.04) & (yy < LOG_H)
+def hash2d(ix: int, iy: int, seed: int) -> float:
+    n = (ix * 374761393 + iy * 668265263 + seed * 1442695041) & 0xFFFFFFFF
+    n = ((n ^ (n >> 13)) * 1274126177) & 0xFFFFFFFF
+    return ((n ^ (n >> 16)) & 0x7FFFFFFF) / float(0x7FFFFFFF)
 
-    bot_y_at_x = hh + (1.0 - dx) * hh
-    in_skirt = (yy >= bot_y_at_x - 0.8) & (yy < bot_y_at_x + LOG_SKIRT) & (dx <= 1.02)
-    in_tile = in_diamond | in_skirt
 
-    def make_crisp_iso_tile(
-        base_rgb: tuple,
-        shade_rgb: tuple,
-        light_rgb: tuple,
-        skirt_rgb: tuple,
-        seed_offset: int,
-        pixel_art_fn=None,
-    ) -> Image.Image:
-        arr = np.zeros((LOG_CELL_H, LOG_W, 4), dtype=np.uint8)
-        for c_i in range(3):
-            plane = np.where(in_skirt, skirt_rgb[c_i], base_rgb[c_i])
-            plane = np.where(in_diamond, base_rgb[c_i], plane)
-            arr[:, :, c_i] = plane.astype(np.uint8)
-        arr[:, :, 3] = np.where(in_tile, 255, 0).astype(np.uint8)
+def smooth_noise(x: float, y: float, seed: int) -> float:
+    ix = int(math.floor(x))
+    iy = int(math.floor(y))
+    fx = x - ix
+    fy = y - iy
+    ux = fx * fx * (3.0 - 2.0 * fx)
+    uy = fy * fy * (3.0 - 2.0 * fy)
+    v00 = hash2d(ix, iy, seed)
+    v10 = hash2d(ix + 1, iy, seed)
+    v01 = hash2d(ix, iy + 1, seed)
+    v11 = hash2d(ix + 1, iy + 1, seed)
+    return (v00 * (1.0 - ux) + v10 * ux) * (1.0 - uy) + (v01 * (1.0 - ux) + v11 * ux) * uy
 
-        # Deterministic pixel-art cluster pattern inside diamond (leaving 2px border uniform for seamless tiling!)
-        rng = random.Random(1000 + seed_offset * 97)
-        for _ in range(9):
-            cx = rng.randint(6, LOG_W - 7)
-            cy = rng.randint(3, LOG_H - 4)
-            if in_diamond[cy, cx]:
-                col = light_rgb if rng.random() < 0.5 else shade_rgb
-                for ox, oy in [(0, 0), (1, 0), (0, 1)]:
-                    ny, nx = cy + oy, cx + ox
-                    if 0 <= ny < LOG_H and 0 <= nx < LOG_W and in_diamond[ny, nx]:
-                        arr[ny, nx, :3] = col
 
-        if pixel_art_fn is not None:
-            pixel_art_fn(arr, in_diamond, seed_offset)
+def in_iso_diamond(x: int, y: int) -> bool:
+    """
+    Exact 64x32 2:1 isometric diamond coverage that tiles edge-to-edge without
+    any gaps and WITHOUT protruding 3D cliff skirts!
+    """
+    if y < 0 or y >= TILE_H:
+        return False
+    dx = abs(x - 31.5)
+    dy = abs(y - 15.5)
+    return (dx + 2.0 * dy) <= 33.0
 
-        log_im = Image.fromarray(arr, "RGBA")
-        return log_im.resize((LOG_W * PIXEL_SCALE, LOG_CELL_H * PIXEL_SCALE), Image.Resampling.NEAREST)
 
-    atlas = Image.new("RGBA", (COLS * 64, ROWS * 40), (0, 0, 0, 0))
+def edge_blend_weight(x: int, y: int) -> float:
+    """
+    Returns 0.0 near the diamond boundary and 1.0 inside the diamond interior,
+    so all tiles smoothly converge to a harmonious edge tone at their borders
+    (eliminating harsh grid lines between adjacent tiles!).
+    """
+    dx = abs(x - 31.5)
+    dy = abs(y - 15.5)
+    dist_from_edge = max(0.0, 32.5 - (dx + 2.0 * dy))
+    return min(1.0, dist_from_edge / 6.0)
 
-    def put_px(arr, mask, x, y, rgb):
-        if 0 <= y < LOG_H and 0 <= x < LOG_W and mask[y, x]:
-            arr[y, x, :3] = rgb
 
-    # ROW 0: Crisp Pixel-Art Water Tiles (Deep, Shallow, River, Lilypads)
-    for i in range(4):
-        def deep_wave(arr, mask, idx):
-            for wx, wy in [(11 + (idx % 3), 6), (17 - (idx % 2), 9), (13, 11)]:
-                put_px(arr, mask, wx, wy, (125, 194, 245))
-                put_px(arr, mask, wx + 1, wy, (165, 218, 255))
-                put_px(arr, mask, wx + 2, wy, (125, 194, 245))
-        t = make_crisp_iso_tile((44, 108, 178), (38, 96, 164), (54, 122, 194), (36, 90, 154), i, deep_wave)
-        atlas.alpha_composite(t, (i * 64, 0))
+def make_grass_tile(
+    base_rgb: tuple,
+    mid_rgb: tuple,
+    light_rgb: tuple,
+    shade_rgb: tuple,
+    edge_rgb: tuple,
+    variant: int,
+    flower_palette: list = None,
+) -> Image.Image:
+    im = Image.new("RGBA", (TILE_W, CELL_H), (0, 0, 0, 0))
+    px = im.load()
+    seed = 100 + variant * 37
 
-    for i in range(4):
-        def shallow_wave(arr, mask, idx):
-            for wx, wy in [(10 + (idx % 3), 6), (18 - (idx % 2), 8), (14, 11)]:
-                put_px(arr, mask, wx, wy, (190, 238, 255))
-                put_px(arr, mask, wx + 1, wy, (230, 250, 255))
-                put_px(arr, mask, wx + 2, wy, (190, 238, 255))
-        t = make_crisp_iso_tile((64, 144, 210), (56, 132, 198), (76, 158, 222), (52, 124, 188), 10 + i, shallow_wave)
-        atlas.alpha_composite(t, ((4 + i) * 64, 0))
+    # 1. Organic multi-octave pixel-art grass base with edge harmonization
+    for y in range(TILE_H):
+        for x in range(TILE_W):
+            if not in_iso_diamond(x, y):
+                continue
+            w_in = edge_blend_weight(x, y)
+            n1 = smooth_noise(x * 0.16, y * 0.32, seed)
+            n2 = smooth_noise(x * 0.38, y * 0.76, seed + 19)
+            val = n1 * 0.68 + n2 * 0.32
 
-    for i in range(4):
-        def river_wave(arr, mask, idx):
-            for wx, wy in [(10 + (idx % 4), 5), (15 + (idx % 3), 8), (12 + (idx % 2), 11)]:
-                put_px(arr, mask, wx, wy, (205, 244, 255))
-                put_px(arr, mask, wx + 1, wy, (240, 252, 255))
-                put_px(arr, mask, wx + 2, wy + 1, (180, 230, 250))
-        t = make_crisp_iso_tile((58, 136, 204), (50, 124, 192), (70, 150, 218), (48, 118, 182), 20 + i, river_wave)
-        atlas.alpha_composite(t, ((8 + i) * 64, 0))
+            # Quantize to 4 soft Stardew pixel-art tones
+            if val < 0.34:
+                col = shade_rgb
+            elif val < 0.56:
+                col = base_rgb
+            elif val < 0.76:
+                col = mid_rgb
+            else:
+                col = light_rgb
 
-    for i in range(4):
-        def lilypad_px(arr, mask, idx):
-            for lx, ly in [(12, 7), (19, 9)]:
-                for dy_l in (-1, 0, 1):
-                    for dx_l in (-2, -1, 0, 1, 2):
-                        if abs(dx_l) + abs(dy_l) <= 2:
-                            put_px(arr, mask, lx + dx_l, ly + dy_l, (68, 162, 68) if dy_l <= 0 else (48, 128, 52))
-                if idx % 2 == 0 and lx == 12:
-                    put_px(arr, mask, lx, ly - 1, (252, 158, 192))
-                    put_px(arr, mask, lx + 1, ly - 1, (255, 224, 102))
-        t = make_crisp_iso_tile((64, 144, 210), (56, 132, 198), (76, 158, 222), (52, 124, 188), 30 + i, lilypad_px)
-        atlas.alpha_composite(t, ((12 + i) * 64, 0))
+            # Blend gently toward edge_rgb near the border for seamless tiling
+            r = int(round(col[0] * w_in + edge_rgb[0] * (1.0 - w_in)))
+            g = int(round(col[1] * w_in + edge_rgb[1] * (1.0 - w_in)))
+            b = int(round(col[2] * w_in + edge_rgb[2] * (1.0 - w_in)))
+            px[x, y] = (r, g, b, 255)
 
-    # ROW 1: Sand Shore (0..3), Sunny Meadow Grass (4..7), Forest Grass (8..11), Interlocking Cobble Path (12..15)
-    for i in range(4):
-        def sand_px(arr, mask, idx):
-            for sx, sy in [(11 + idx, 7), (18 - idx, 9), (14, 11)]:
-                put_px(arr, mask, sx, sy, (196, 142, 82))
-                put_px(arr, mask, sx + 1, sy, (242, 198, 136))
-        t = make_crisp_iso_tile((224, 174, 108), (212, 160, 96), (236, 188, 122), (216, 166, 102), 40 + i, sand_px)
-        atlas.alpha_composite(t, (i * 64, 40))
+    # 2. Delicate 1x1 pixel grass tufts & blades inside the diamond
+    rng = np.random.default_rng(seed + 777)
+    for _ in range(26):
+        gx = int(rng.integers(8, 56))
+        gy = int(rng.integers(5, 27))
+        if not in_iso_diamond(gx, gy) or edge_blend_weight(gx, gy) < 0.35:
+            continue
+        # 3-pixel miniature grass blade tuft
+        if in_iso_diamond(gx, gy):
+            px[gx, gy] = shade_rgb + (255,)
+        if in_iso_diamond(gx, gy - 1):
+            px[gx, gy - 1] = light_rgb + (255,)
+        if in_iso_diamond(gx + 1, gy):
+            px[gx + 1, gy] = mid_rgb + (255,)
+        if in_iso_diamond(gx + 1, gy - 1) and rng.random() < 0.65:
+            px[gx + 1, gy - 1] = light_rgb + (255,)
 
-    for i in range(4):
-        def meadow_px(arr, mask, idx):
-            # Crisp 3-pixel grass blades & clovers
-            pts = [(10 + idx, 6), (18 - idx, 7), (13, 10), (20, 9), (15, 5)]
-            for gx, gy in pts:
-                put_px(arr, mask, gx, gy, (68, 142, 56))
-                put_px(arr, mask, gx, gy - 1, (118, 202, 88))
-                put_px(arr, mask, gx + 1, gy, (106, 190, 80))
-        t = make_crisp_iso_tile((88, 168, 72), (78, 154, 64), (98, 182, 82), (84, 162, 68), 50 + i, meadow_px)
-        atlas.alpha_composite(t, ((4 + i) * 64, 40))
+    # 3. Optional tiny flower buds / fallen autumn leaves
+    if flower_palette:
+        for _ in range(4):
+            fx = int(rng.integers(14, 50))
+            fy = int(rng.integers(7, 25))
+            if in_iso_diamond(fx, fy) and edge_blend_weight(fx, fy) > 0.45:
+                fcol = flower_palette[int(rng.integers(0, len(flower_palette)))]
+                px[fx, fy] = fcol + (255,)
+                if in_iso_diamond(fx + 1, fy):
+                    px[fx + 1, fy] = fcol + (255,)
+                if in_iso_diamond(fx, fy - 1):
+                    px[fx, fy - 1] = (255, 246, 196, 255)
 
-    for i in range(4):
-        def forest_px(arr, mask, idx):
-            pts = [(11 + idx, 6), (17 - idx, 8), (13, 10), (19, 7)]
-            for gx, gy in pts:
-                put_px(arr, mask, gx, gy, (48, 114, 54))
-                put_px(arr, mask, gx, gy - 1, (88, 168, 86))
-                put_px(arr, mask, gx + 1, gy, (76, 154, 76))
-        t = make_crisp_iso_tile((64, 138, 68), (56, 126, 60), (74, 152, 78), (60, 132, 64), 60 + i, forest_px)
-        atlas.alpha_composite(t, ((8 + i) * 64, 40))
+    return im
 
-    for i in range(4):
-        def cobble_road_px(arr, mask, idx):
-            # Rich interlocking pixel-art cobblestones scattered across the whole path tile
-            stones = [
-                (8, 6, 3, 2), (13, 4, 4, 2), (19, 5, 3, 2),
-                (6, 8, 3, 2), (11, 7, 4, 3), (17, 8, 4, 2), (22, 8, 3, 2),
-                (10, 11, 4, 2), (16, 11, 4, 2), (13, 13, 3, 2),
-            ]
-            for sx, sy, sw, sh in stones:
-                ox = (idx + sy) % 2
-                for py in range(sy, sy + sh):
-                    for px in range(sx + ox, sx + ox + sw):
-                        if (px == sx + ox or py == sy):
-                            put_px(arr, mask, px, py, (194, 182, 166))
-                        elif (px == sx + ox + sw - 1 or py == sy + sh - 1):
-                            put_px(arr, mask, px, py, (112, 92, 74))
-                        else:
-                            put_px(arr, mask, px, py, (164, 152, 138))
-        t = make_crisp_iso_tile((192, 138, 86), (178, 124, 74), (206, 152, 98), (184, 130, 80), 70 + i, cobble_road_px)
-        atlas.alpha_composite(t, ((12 + i) * 64, 40))
 
-    # ROW 2: Wooden Bridge (0..3), Watered Soil (4..7), Slate Ground (8..11), Autumn Grass (12..15)
-    for i in range(4):
-        def bridge_px(arr, mask, idx):
-            for y in range(LOG_H):
-                for x in range(LOG_W):
-                    if mask[y, x]:
-                        # Diagonal isometric plank seams every 4 pixels
-                        if (x + y * 2) % 5 == 0:
-                            arr[y, x, :3] = (98, 56, 28)
-                        elif (x + y * 2) % 5 == 1:
-                            arr[y, x, :3] = (214, 154, 96)
-                        # Top-left and bottom-right wooden guard rails
-                        d_top_left = abs((hw - x) * 0.5 + (0 - y))
-                        if y <= 3 and x < hw and mask[y, x]:
-                            arr[y, x, :3] = (228, 174, 112)
-                        elif y >= LOG_H - 3 and x >= hw and mask[y, x]:
-                            arr[y, x, :3] = (138, 84, 44)
-        t = make_crisp_iso_tile((186, 124, 72), (172, 112, 62), (202, 138, 84), (142, 88, 46), 80 + i, bridge_px)
-        atlas.alpha_composite(t, (i * 64, 80))
+def make_sand_tile(base_rgb: tuple, light_rgb: tuple, shade_rgb: tuple, variant: int) -> Image.Image:
+    im = Image.new("RGBA", (TILE_W, CELL_H), (0, 0, 0, 0))
+    px = im.load()
+    seed = 300 + variant * 41
 
-    for i in range(4):
-        t = make_crisp_iso_tile((118, 78, 48), (106, 68, 40), (132, 90, 58), (112, 72, 44), 90 + i)
-        atlas.alpha_composite(t, ((4 + i) * 64, 80))
+    for y in range(TILE_H):
+        for x in range(TILE_W):
+            if not in_iso_diamond(x, y):
+                continue
+            w_in = edge_blend_weight(x, y)
+            # Subtle isometric ripple + organic grain
+            u = (x - 32.0) * 0.5 + (y - 16.0)
+            ripple = 0.5 + 0.5 * math.sin(u * 0.42 + smooth_noise(x * 0.2, y * 0.4, seed) * 2.2)
+            n = smooth_noise(x * 0.35, y * 0.70, seed + 11)
+            v = ripple * 0.55 + n * 0.45
+            if v < 0.35:
+                col = shade_rgb
+            elif v < 0.70:
+                col = base_rgb
+            else:
+                col = light_rgb
+            r = int(round(col[0] * w_in + base_rgb[0] * (1.0 - w_in)))
+            g = int(round(col[1] * w_in + base_rgb[1] * (1.0 - w_in)))
+            b = int(round(col[2] * w_in + base_rgb[2] * (1.0 - w_in)))
+            px[x, y] = (r, g, b, 255)
 
-    for i in range(4):
-        t = make_crisp_iso_tile((122, 128, 142), (110, 116, 130), (136, 142, 156), (116, 122, 136), 100 + i)
-        atlas.alpha_composite(t, ((8 + i) * 64, 80))
+    rng = np.random.default_rng(seed + 99)
+    for _ in range(10):
+        sx = int(rng.integers(12, 52))
+        sy = int(rng.integers(6, 26))
+        if in_iso_diamond(sx, sy) and edge_blend_weight(sx, sy) > 0.4:
+            px[sx, sy] = shade_rgb + (255,)
+            if in_iso_diamond(sx - 1, sy):
+                px[sx - 1, sy] = light_rgb + (255,)
+    return im
 
-    for i in range(4):
-        def autumn_px(arr, mask, idx):
-            for lx, ly in [(10 + idx, 6), (18 - idx, 8), (14, 10), (20, 7)]:
-                col = (238, 126, 48) if (lx + idx) % 2 == 0 else (246, 192, 58)
-                put_px(arr, mask, lx, ly, col)
-                put_px(arr, mask, lx + 1, ly, col)
-        t = make_crisp_iso_tile((124, 166, 64), (112, 152, 56), (138, 180, 74), (118, 160, 60), 110 + i, autumn_px)
-        atlas.alpha_composite(t, ((12 + i) * 64, 80))
 
-    # ROW 3: Crisp Pixel-Art Ground Decor Overlays (Wildflowers, Grass Tufts, Mushrooms, Pebbles)
-    flower_sets = [
-        ((238, 68, 72), (255, 224, 82)),
-        ((252, 208, 62), (228, 134, 32)),
-        ((250, 162, 196), (255, 242, 188)),
-        ((246, 246, 252), (248, 204, 64)),
+def make_cobblestone_road_tile(variant: int) -> Image.Image:
+    """
+    Warm country dirt path with closely-fitted rounded river-stone cobblestones
+    at 1x1 pixel resolution and smooth edge transitions (no blocky brown diamond frame!).
+    """
+    im = Image.new("RGBA", (TILE_W, CELL_H), (0, 0, 0, 0))
+    px = im.load()
+    seed = 500 + variant * 53
+
+    dirt_base = (186, 148, 102)
+    dirt_shade = (164, 126, 82)
+    dirt_light = (202, 164, 116)
+
+    for y in range(TILE_H):
+        for x in range(TILE_W):
+            if not in_iso_diamond(x, y):
+                continue
+            n = smooth_noise(x * 0.25, y * 0.5, seed)
+            col = dirt_shade if n < 0.38 else (dirt_base if n < 0.72 else dirt_light)
+            px[x, y] = col + (255,)
+
+    # Interlocking rounded cobblestones across the diamond
+    stone_tones = [
+        ((164, 156, 144), (192, 184, 172), (122, 114, 104)),
+        ((152, 146, 138), (180, 174, 166), (114, 108, 98)),
+        ((176, 164, 148), (202, 190, 174), (132, 120, 106)),
+        ((144, 140, 134), (172, 168, 160), (108, 102, 94)),
     ]
-    for i, (petal_c, center_c) in enumerate(flower_sets):
-        arr = np.zeros((LOG_CELL_H, LOG_W, 4), dtype=np.uint8)
-        for fx, fy in [(11, 7), (18, 6), (14, 10), (21, 9)]:
-            arr[fy + 1, fx] = (54, 128, 52, 255)
-            for ox, oy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                arr[fy + oy, fx + ox] = (*petal_c, 255)
-            arr[fy, fx] = (*center_c, 255)
-        t = Image.fromarray(arr, "RGBA").resize((64, 40), Image.Resampling.NEAREST)
-        atlas.alpha_composite(t, (i * 64, 120))
+    rng = np.random.default_rng(seed + 333)
 
-    for i in range(4):
-        arr = np.zeros((LOG_CELL_H, LOG_W, 4), dtype=np.uint8)
-        for gx, gy in [(11, 8), (17, 7), (14, 11), (20, 9)]:
-            arr[gy, gx] = (54, 132, 52, 255)
-            arr[gy - 1, gx - 1] = (78, 164, 68, 255)
-            arr[gy - 1, gx] = (98, 186, 80, 255)
-            arr[gy - 2, gx] = (118, 202, 92, 255)
-            arr[gy - 1, gx + 1] = (78, 164, 68, 255)
-        t = Image.fromarray(arr, "RGBA").resize((64, 40), Image.Resampling.NEAREST)
-        atlas.alpha_composite(t, ((4 + i) * 64, 120))
+    # Grid of jittered isometric cobbles covering the road surface
+    for gy in range(4, 29, 4):
+        row_shift = 3 if ((gy // 4) % 2 == 1) else 0
+        for gx in range(8 + row_shift, 56, 6):
+            cx = gx + int(rng.integers(-1, 2))
+            cy = gy + int(rng.integers(-1, 2))
+            if not in_iso_diamond(cx, cy) or edge_blend_weight(cx, cy) < 0.22:
+                continue
+            rx = int(rng.integers(2, 4))
+            ry = 1 if rx == 2 else 2
+            mid_s, hi_s, sh_s = stone_tones[int(rng.integers(0, len(stone_tones)))]
 
-    for i in range(4):
-        arr = np.zeros((LOG_CELL_H, LOG_W, 4), dtype=np.uint8)
-        for mx, my in [(12, 8), (19, 9), (15, 6)]:
-            arr[my + 1, mx] = (240, 226, 202, 255)
-            for ox in (-1, 0, 1):
-                arr[my, mx + ox] = (224, 56, 50, 255)
-            arr[my - 1, mx] = (255, 246, 232, 255)
-        t = Image.fromarray(arr, "RGBA").resize((64, 40), Image.Resampling.NEAREST)
-        atlas.alpha_composite(t, ((8 + i) * 64, 120))
+            for dy in range(-ry, ry + 1):
+                for dx in range(-rx, rx + 1):
+                    px_x, px_y = cx + dx, cy + dy
+                    if not in_iso_diamond(px_x, px_y):
+                        continue
+                    dist = (dx * dx) / float(max(1, rx * rx)) + (dy * dy) / float(max(1, ry * ry))
+                    if dist <= 1.05:
+                        if dist > 0.72 and (dx + dy >= 1):
+                            px[px_x, px_y] = sh_s + (255,)
+                        elif dx + dy <= -1:
+                            px[px_x, px_y] = hi_s + (255,)
+                        else:
+                            px[px_x, px_y] = mid_s + (255,)
 
-    for i in range(4):
-        arr = np.zeros((LOG_CELL_H, LOG_W, 4), dtype=np.uint8)
-        for px, py in [(11, 7), (18, 6), (14, 10), (20, 9)]:
-            arr[py, px] = (142, 148, 158, 255)
-            arr[py, px + 1] = (186, 192, 202, 255)
-            arr[py + 1, px] = (108, 114, 124, 255)
-        t = Image.fromarray(arr, "RGBA").resize((64, 40), Image.Resampling.NEAREST)
-        atlas.alpha_composite(t, ((12 + i) * 64, 120))
+    return im
 
-    # ROW 4: Sakura Spring Lawn (0..3), Warm Sandstone (4..7), Lush Clover Lawn (8..15)
-    for i in range(4):
-        def sakura_lawn_px(arr, mask, idx):
-            for px, py in [(10 + idx, 6), (18 - idx, 8), (14, 10), (20, 7)]:
-                put_px(arr, mask, px, py, (252, 172, 202))
-                put_px(arr, mask, px + 1, py, (255, 212, 228))
-        t = make_crisp_iso_tile((96, 178, 78), (84, 164, 68), (110, 192, 88), (92, 172, 74), 120 + i, sakura_lawn_px)
-        atlas.alpha_composite(t, (i * 64, 160))
 
-    for i in range(4):
-        t = make_crisp_iso_tile((210, 158, 108), (196, 144, 96), (224, 172, 122), (204, 152, 104), 130 + i)
-        atlas.alpha_composite(t, ((4 + i) * 64, 160))
+def make_wooden_bridge_tile(variant: int) -> Image.Image:
+    """
+    Authentic 2:1 isometric oak-plank bridge (cross-planks running NE-SW across
+    the river span, with warm woodgrain, plank seams, and sturdy side rails).
+    """
+    im = Image.new("RGBA", (TILE_W, CELL_H), (0, 0, 0, 0))
+    px = im.load()
+    seed = 700 + variant * 29
 
-    for i in range(8):
-        t = make_crisp_iso_tile((78, 160, 68), (68, 146, 60), (90, 174, 78), (74, 154, 64), 140 + i)
-        atlas.alpha_composite(t, ((8 + i) * 64, 160))
+    plank_tones = [
+        (184, 124, 68),
+        (172, 112, 58),
+        (196, 136, 78),
+        (164, 106, 54),
+    ]
+    seam_col = (104, 62, 30)
+    rail_top = (210, 152, 92)
+    rail_side = (142, 88, 44)
+    skirt_col = (112, 68, 34)
+
+    for y in range(TILE_H):
+        for x in range(TILE_W):
+            if not in_iso_diamond(x, y):
+                continue
+            # Isometric coordinates along & across the bridge
+            u = (x - 31.5) * 0.5 + (y - 15.5)   # along river (NW-SE)
+            v = -(x - 31.5) * 0.5 + (y - 15.5)  # across river (NE-SW)
+
+            # Side guard rails along the top-right and bottom-left bridge edges
+            if abs(u) > 13.2:
+                px[x, y] = (rail_top if u < 0 else rail_side) + (255,)
+                continue
+
+            plank_idx = int(math.floor((v + 32.0) / 3.5))
+            plank_frac = (v + 32.0) / 3.5 - plank_idx
+            if plank_frac < 0.16:
+                px[x, y] = seam_col + (255,)
+            else:
+                base_p = plank_tones[(plank_idx + variant) % len(plank_tones)]
+                grain = int(round((smooth_noise(u * 0.45, v * 0.25, seed) - 0.5) * 14.0))
+                r = max(0, min(255, base_p[0] + grain))
+                g = max(0, min(255, base_p[1] + grain))
+                b = max(0, min(255, base_p[2] + grain))
+                px[x, y] = (r, g, b, 255)
+
+    # Subtle 2px wooden side thickness on the lower edge of the bridge over water
+    for x in range(TILE_W):
+        for y in range(16, TILE_H):
+            if in_iso_diamond(x, y) and not in_iso_diamond(x, y + 1):
+                for sy in range(1, 3):
+                    if y + sy < CELL_H:
+                        px[x, y + sy] = skirt_col + (255,)
+                break
+
+    return im
+
+
+def make_water_tile(
+    base_rgb: tuple,
+    mid_rgb: tuple,
+    light_rgb: tuple,
+    variant: int,
+    with_lilypad: bool = False,
+) -> Image.Image:
+    im = Image.new("RGBA", (TILE_W, CELL_H), (0, 0, 0, 0))
+    px = im.load()
+    seed = 900 + variant * 31
+
+    for y in range(TILE_H):
+        for x in range(TILE_W):
+            if not in_iso_diamond(x, y):
+                continue
+            w_in = edge_blend_weight(x, y)
+            wave = math.sin((x * 0.22) + (y * 0.44) + variant * 1.57)
+            n = smooth_noise(x * 0.20, y * 0.40, seed)
+            val = 0.5 + 0.28 * wave + 0.22 * (n - 0.5)
+            if val < 0.38:
+                col = base_rgb
+            elif val < 0.72:
+                col = mid_rgb
+            else:
+                col = light_rgb
+            r = int(round(col[0] * w_in + mid_rgb[0] * (1.0 - w_in)))
+            g = int(round(col[1] * w_in + mid_rgb[1] * (1.0 - w_in)))
+            b = int(round(col[2] * w_in + mid_rgb[2] * (1.0 - w_in)))
+            px[x, y] = (r, g, b, 255)
+
+    # Delicate 1px water shimmer lines (animated by variant phase)
+    shimmer_col = (min(255, light_rgb[0] + 42), min(255, light_rgb[1] + 42), min(255, light_rgb[2] + 32), 255)
+    shift = (variant * 3) % 12
+    for rx, ry, length in ((18 + shift, 11, 5), (34 - shift // 2, 18, 6), (26, 23 - (shift % 4), 4)):
+        for dx in range(length):
+            if in_iso_diamond(rx + dx, ry) and edge_blend_weight(rx + dx, ry) > 0.35:
+                px[rx + dx, ry] = shimmer_col
+
+    if with_lilypad:
+        draw = ImageDraw.Draw(im)
+        lx, ly = 28 + (variant % 2) * 5, 15 + ((variant // 2) % 2) * 3
+        draw.ellipse([lx - 5, ly - 3, lx + 5, ly + 3], fill=(64, 152, 68, 255), outline=(38, 102, 44, 255))
+        draw.ellipse([lx - 3, ly - 2, lx + 2, ly + 1], fill=(92, 182, 84, 255))
+        if variant % 2 == 0:
+            draw.rectangle([lx - 1, ly - 2, lx + 1, ly], fill=(252, 182, 206, 255))
+            px[lx, ly - 1] = (255, 240, 150, 255)
+
+    return im
+
+
+def draw_decor_cell(atlas: Image.Image, col: int, row: int, kind: str, variant: int) -> None:
+    cell = Image.new("RGBA", (TILE_W, CELL_H), (0, 0, 0, 0))
+    px = cell.load()
+    rng = np.random.default_rng(1400 + col * 53 + row * 19 + variant)
+
+    if kind == "flowers":
+        palettes = [
+            [(238, 86, 82), (252, 132, 122)],
+            [(248, 204, 68), (255, 232, 120)],
+            [(232, 134, 204), (248, 178, 226)],
+            [(242, 246, 252), (214, 226, 242)],
+        ]
+        petals = palettes[variant % 4]
+        for _ in range(5):
+            fx = int(rng.integers(18, 46))
+            fy = int(rng.integers(10, 23))
+            if in_iso_diamond(fx, fy):
+                px[fx, fy + 1] = (54, 122, 52, 255)
+                for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    if in_iso_diamond(fx + dx, fy + dy):
+                        px[fx + dx, fy + dy] = petals[0] + (255,)
+                px[fx, fy] = (255, 236, 116, 255)
+    elif kind == "tufts":
+        for _ in range(7):
+            tx = int(rng.integers(16, 48))
+            ty = int(rng.integers(9, 24))
+            if in_iso_diamond(tx, ty):
+                px[tx, ty] = (52, 114, 48, 255)
+                px[tx, ty - 1] = (86, 158, 66, 255)
+                px[tx + 1, ty - 1] = (118, 186, 78, 255)
+                if ty - 2 >= 0:
+                    px[tx, ty - 2] = (144, 204, 92, 255)
+    elif kind == "mushrooms":
+        for _ in range(3):
+            mx = int(rng.integers(20, 44))
+            my = int(rng.integers(11, 22))
+            if in_iso_diamond(mx, my):
+                px[mx, my] = (236, 222, 196, 255)
+                px[mx, my + 1] = (212, 196, 168, 255)
+                for dx in (-1, 0, 1):
+                    px[mx + dx, my - 1] = (218, 72, 58, 255)
+                px[mx, my - 2] = (236, 94, 74, 255)
+                px[mx - 1, my - 1] = (252, 244, 228, 255)
+    elif kind == "pebbles":
+        for _ in range(5):
+            px_x = int(rng.integers(18, 46))
+            px_y = int(rng.integers(10, 23))
+            if in_iso_diamond(px_x, px_y):
+                px[px_x, px_y] = (146, 152, 160, 255)
+                px[px_x + 1, px_y] = (118, 124, 132, 255)
+                px[px_x, px_y - 1] = (176, 182, 190, 255)
+
+    atlas.alpha_composite(cell, (col * TILE_W, row * CELL_H))
+
+
+def build_isometric_tileset() -> None:
+    print("Building Seamless 1:1 Pixel-Art Isometric Tileset (1024x200, flush 64x32 diamonds)...")
+    atlas = Image.new("RGBA", (16 * TILE_W, 5 * CELL_H), (0, 0, 0, 0))
+
+    def put(c: int, r: int, tile_im: Image.Image) -> None:
+        atlas.alpha_composite(tile_im, (c * TILE_W, r * CELL_H))
+
+    # Shared warm meadow edge color so all grass biomes blend together smoothly
+    meadow_edge = (102, 164, 72)
+
+    for v in range(4):
+        # Row 0: Water (deep lake, shallow lake, river current, lilypad water)
+        put(0 + v, 0, make_water_tile((42, 108, 168), (54, 124, 188), (72, 144, 208), v))
+        put(4 + v, 0, make_water_tile((54, 126, 190), (68, 144, 208), (88, 164, 226), v))
+        put(8 + v, 0, make_water_tile((48, 118, 182), (62, 136, 200), (84, 158, 220), v))
+        put(12 + v, 0, make_water_tile((54, 126, 190), (68, 144, 208), (88, 164, 226), v, with_lilypad=True))
+
+        # Row 1: Warm Sand (0..3), Lush Meadow Grass (4..7), Forest Grass (8..11), Cobblestone Road (12..15)
+        put(0 + v, 1, make_sand_tile((216, 184, 126), (230, 200, 144), (196, 162, 106), v))
+        put(4 + v, 1, make_grass_tile((98, 162, 70), (110, 174, 78), (124, 188, 88), (84, 146, 60), meadow_edge, v))
+        put(8 + v, 1, make_grass_tile((76, 138, 62), (88, 152, 70), (102, 166, 78), (64, 122, 52), (86, 148, 66), v + 10))
+        put(12 + v, 1, make_cobblestone_road_tile(v))
+
+        # Row 2: Wooden Bridge (0..3), Rich Soil (4..7), Slate Highland (8..11), Warm Olive/Autumn Meadow (12..15)
+        put(0 + v, 2, make_wooden_bridge_tile(v))
+        put(4 + v, 2, make_sand_tile((138, 96, 62), (154, 110, 74), (118, 80, 50), v + 20))
+        put(8 + v, 2, make_sand_tile((132, 138, 148), (148, 154, 164), (114, 120, 130), v + 30))
+        put(
+            12 + v, 2,
+            make_grass_tile(
+                (112, 164, 68), (126, 176, 76), (142, 190, 86), (96, 148, 58), meadow_edge, v + 20,
+                flower_palette=[(228, 124, 54), (238, 168, 64)],
+            ),
+        )
+
+        # Row 3: Transparent Isometric Ground Decorations
+        draw_decor_cell(atlas, 0 + v, 3, "flowers", v)
+        draw_decor_cell(atlas, 4 + v, 3, "tufts", v)
+        draw_decor_cell(atlas, 8 + v, 3, "mushrooms", v)
+        draw_decor_cell(atlas, 12 + v, 3, "pebbles", v)
+
+        # Row 4: Spring Blossom Lawn (0..3), Warm Sandstone Plateau (4..7), Mossy Glade (8..15)
+        put(
+            0 + v, 4,
+            make_grass_tile(
+                (104, 168, 76), (116, 180, 84), (132, 194, 94), (90, 152, 66), meadow_edge, v + 30,
+                flower_palette=[(248, 176, 204), (255, 210, 226)],
+            ),
+        )
+        put(4 + v, 4, make_sand_tile((198, 154, 106), (214, 170, 122), (178, 136, 90), v + 40))
+        put(8 + v, 4, make_grass_tile((86, 148, 66), (98, 162, 74), (112, 176, 84), (74, 134, 56), meadow_edge, v + 40))
+        put(12 + v, 4, make_grass_tile((92, 156, 68), (104, 168, 76), (118, 182, 86), (80, 142, 58), meadow_edge, v + 50))
 
     atlas.save("assets/tilesets/world_tileset.png")
-    print("Saved crisp pixel-art assets/tilesets/world_tileset.png")
+    print("Saved seamless 1:1 pixel-art assets/tilesets/world_tileset.png")
 
 
 if __name__ == "__main__":
     build_world_objects()
     build_explorer_spritesheet()
-    build_crisp_isometric_tileset()
-    print("All crisp low-res pixel-art isometric assets built successfully!")
+    build_isometric_tileset()
+    print("All high-clarity 1:1 pixel-art isometric assets built successfully!")
