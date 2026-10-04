@@ -335,9 +335,9 @@ DIRECTIONS = [
 ANIMATION_FRAME_COUNT = 16
 
 ANIMATIONS = [
-    ("idle", ANIMATION_FRAME_COUNT),
-    ("walk", ANIMATION_FRAME_COUNT),
-    ("run", ANIMATION_FRAME_COUNT),
+    ("idle", 16),
+    ("walk", 5),
+    ("run", 4),
     ("axe", ANIMATION_FRAME_COUNT),
     ("pickaxe", ANIMATION_FRAME_COUNT),
     ("water", ANIMATION_FRAME_COUNT),
@@ -544,72 +544,237 @@ def render_smooth_explorer_frame(
     return canvas
 
 
+def extract_user_animation_frames() -> dict[str, dict[str, list[Image.Image]]]:
+    """Read the labelled 8-direction reference sheet committed as image.png.
+
+    Its rows are ordered N, NE, E, SE, S, SW, W, NW; each contains one idle pose,
+    five walk frames, and four run frames. We identify the sprite silhouettes so labels,
+    dotted dividers, and the white page never make it into the game texture.
+    """
+    with Image.open("image.png") as source_file:
+        source = source_file.convert("RGB")
+    pixels = np.asarray(source, dtype=np.int16)
+    min_channel = pixels.min(axis=2)
+    max_channel = pixels.max(axis=2)
+    chroma = max_channel - min_channel
+    mean = pixels.mean(axis=2)
+    foreground = (min_channel < 188) | ((chroma > 45) & (mean < 242))
+    foreground[:50, :] = False
+    foreground[:, :200] = False
+
+    remaining = foreground.copy()
+    ys, xs = np.nonzero(foreground)
+    by_row: list[list[tuple[int, int, int, int]]] = [[] for _ in range(8)]
+    height, width = foreground.shape
+    for start_y, start_x in zip(ys.tolist(), xs.tolist()):
+        if not remaining[start_y, start_x]:
+            continue
+        stack = [(start_y, start_x)]
+        remaining[start_y, start_x] = False
+        count = 0
+        left = right = start_x
+        top = bottom = start_y
+        while stack:
+            y, x = stack.pop()
+            count += 1
+            left = min(left, x)
+            right = max(right, x)
+            top = min(top, y)
+            bottom = max(bottom, y)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    next_y, next_x = y + dy, x + dx
+                    if 0 <= next_y < height and 200 <= next_x < width and remaining[next_y, next_x]:
+                        remaining[next_y, next_x] = False
+                        stack.append((next_y, next_x))
+        if count < 500:
+            continue
+        row = min(7, max(0, (top - 50) // 120))
+        by_row[row].append((left, top, right + 1, bottom + 1))
+
+    for row, components in enumerate(by_row):
+        components.sort(key=lambda box: box[0])
+        if len(components) != 10:
+            raise ValueError(
+                f"Expected 10 sprites in image.png direction row {row}, found {len(components)}."
+            )
+
+    source_direction_rows = {
+        "down": 4,
+        "down_right": 3,
+        "right": 2,
+        "up_right": 1,
+        "up": 0,
+        "up_left": 7,
+        "left": 6,
+        "down_left": 5,
+    }
+    animations: dict[str, dict[str, list[Image.Image]]] = {
+        "idle": {},
+        "walk": {},
+        "run": {},
+    }
+    for direction, source_row in source_direction_rows.items():
+        direction_boxes = by_row[source_row]
+        boxes_by_state = {
+            "idle": direction_boxes[:1],
+            "walk": direction_boxes[1:6],
+            "run": direction_boxes[6:10],
+        }
+        for state, boxes in boxes_by_state.items():
+            state_frames: list[Image.Image] = []
+            for left, top, right, bottom in boxes:
+                pad = 3
+                crop = source.crop(
+                    (
+                        max(0, left - pad),
+                        max(0, top - pad),
+                        min(width, right + pad),
+                        min(height, bottom + pad),
+                    )
+                )
+                clean = extract_clean_rgba(
+                    crop,
+                    white_threshold=220,
+                    chroma_threshold=36,
+                    min_hole_area=100,
+                )
+                sprite = crop_to_alpha(clean)
+                source_width, source_height = sprite.size
+                target_height = 76
+                target_width = max(1, int(round(source_width * target_height / float(source_height))))
+                sprite = resize_rgba(sprite, (target_width, target_height))
+                frame = Image.new("RGBA", (FRAME_SIZE, FRAME_SIZE), (0, 0, 0, 0))
+                frame.alpha_composite(
+                    sprite,
+                    ((FRAME_SIZE - target_width) // 2, 85 - target_height),
+                )
+                state_frames.append(frame)
+            animations[state][direction] = state_frames
+    return animations
+
+
+def make_idle_breath_frame(source: Image.Image, frame_index: int, frame_count: int) -> Image.Image:
+    """Add a barely perceptible breathing loop to the single supplied idle pose."""
+    phase = (frame_index / float(frame_count)) * 2.0 * math.pi
+    wave = math.sin(phase)
+    rgba = np.asarray(source, dtype=np.uint8)
+    yy, xx = np.meshgrid(
+        np.arange(FRAME_SIZE, dtype=np.float32),
+        np.arange(FRAME_SIZE, dtype=np.float32),
+        indexing="ij",
+    )
+    y_norm = np.clip((yy - 8.0) / 76.0, 0.0, 1.0)
+    upper = np.clip((0.80 - y_norm) / 0.50, 0.0, 1.0)
+    source_x = xx + math.cos(phase) * 0.22 * upper
+    source_y = yy - wave * 0.72 * upper
+    return Image.fromarray(bilinear_warp_rgba(rgba, source_x, source_y), "RGBA")
+
+
+def make_action_frame(
+    source: Image.Image,
+    direction: str,
+    action: str,
+    frame_index: int,
+    frame_count: int,
+) -> Image.Image:
+    """Re-use the new outfit for tool actions and add the matching animated tool overlay."""
+    phase = frame_index / float(max(1, frame_count - 1)) * math.tau
+    bell = math.sin(math.pi * frame_index / float(max(1, frame_count - 1))) ** 2
+    side = -1.0 if "left" in direction else 1.0
+    rgba = np.asarray(source, dtype=np.uint8)
+    yy, xx = np.meshgrid(
+        np.arange(FRAME_SIZE, dtype=np.float32),
+        np.arange(FRAME_SIZE, dtype=np.float32),
+        indexing="ij",
+    )
+    y_norm = np.clip((yy - 8.0) / 76.0, 0.0, 1.0)
+    upper = np.clip((0.78 - y_norm) / 0.52, 0.0, 1.0)
+    lower = np.clip((y_norm - 0.48) / 0.48, 0.0, 1.0)
+    source_x = xx.copy()
+    source_y = yy.copy()
+
+    if action in ("axe", "pickaxe"):
+        swing = math.sin(phase) * bell
+        source_x -= swing * side * 1.7 * upper
+        source_y -= bell * 1.05 * upper
+        source_x += swing * side * 0.4 * lower
+    elif action == "water":
+        source_x += side * bell * 0.8 * upper
+        source_y += bell * 1.25 * upper
+    elif action == "interact":
+        source_x += side * bell * 0.5 * upper
+        source_y += bell * 1.4 * upper
+
+    frame = Image.fromarray(bilinear_warp_rgba(rgba, source_x, source_y), "RGBA")
+    draw_action_overlay(frame, direction, action, frame_index, frame_count, -bell)
+    return frame
+
+
 def build_explorer_spritesheet() -> None:
-    print("Building high-resolution 8-direction Explorer animations...")
-    source_dir = Path("assets/ai_raw")
-    poses = {
-        "down": "ai_character_south.png",
-        "down_left": "ai_character_south_east.png",
-        "right": "ai_character_east.png",
-        "up_left": "ai_character_north_east.png",
-        "up": "ai_character_north.png",
-    }
-    cleaned: dict[str, Image.Image] = {}
-    for direction, filename in poses.items():
-        image = extract_clean_rgba(
-            Image.open(source_dir / filename),
-            min_hole_area=120,
-            strip_floor_shadow=True,
-        )
-        cleaned[direction] = crop_to_alpha(image)
-
-    def normalize_pose(image: Image.Image, target_height: int = 216) -> Image.Image:
-        width, height = image.size
-        target_width = max(1, int(round(width * target_height / float(max(1, height)))))
-        return resize_rgba(image, (target_width, target_height))
-
-    down = normalize_pose(cleaned["down"])
-    down_left = normalize_pose(cleaned["down_left"])
-    right = normalize_pose(cleaned["right"])
-    up_left = normalize_pose(cleaned["up_left"])
-    up = normalize_pose(cleaned["up"])
-
-    poses_by_direction = {
-        "down": down,
-        "down_right": down_left.transpose(Image.Transpose.FLIP_LEFT_RIGHT),
-        "right": right,
-        "up_right": up_left.transpose(Image.Transpose.FLIP_LEFT_RIGHT),
-        "up": up,
-        "up_left": up_left,
-        "left": right.transpose(Image.Transpose.FLIP_LEFT_RIGHT),
-        "down_left": down_left,
-    }
-
-    columns = ANIMATION_FRAME_COUNT
+    print("Extracting the supplied 8-direction sprite sheet and building game animations...")
+    source_animations = extract_user_animation_frames()
     rows = len(ANIMATIONS) * len(DIRECTIONS)
-    sheet = Image.new("RGBA", (columns * FRAME_SIZE, rows * FRAME_SIZE), (0, 0, 0, 0))
+    sheet = Image.new(
+        "RGBA",
+        (ANIMATION_FRAME_COUNT * FRAME_SIZE, rows * FRAME_SIZE),
+        (0, 0, 0, 0),
+    )
     showcase = Image.new(
         "RGBA",
         (len(DIRECTIONS) * FRAME_SIZE, len(ANIMATIONS) * FRAME_SIZE),
         (235, 226, 208, 255),
     )
     showcase_draw = ImageDraw.Draw(showcase)
+    icon_idle_frame: Image.Image | None = None
 
-    row_index = 0
+    showcase_samples = {
+        "idle": 8,
+        "walk": 2,
+        "run": 2,
+        "axe": 7,
+        "pickaxe": 7,
+        "water": 7,
+        "interact": 7,
+    }
+
     for animation_index, (animation, frame_count) in enumerate(ANIMATIONS):
-        sample_frame = 4 if animation != "idle" else 0
         for direction_index, direction in enumerate(DIRECTIONS):
-            pose = poses_by_direction[direction]
-            for column in range(columns):
-                frame = render_smooth_explorer_frame(pose, direction, animation, column, frame_count)
-                sheet.alpha_composite(frame, (column * FRAME_SIZE, row_index * FRAME_SIZE))
-                if column == sample_frame:
-                    x = direction_index * FRAME_SIZE
-                    y = animation_index * FRAME_SIZE
-                    background = (236, 228, 211, 255) if (animation_index + direction_index) % 2 == 0 else (226, 216, 198, 255)
-                    showcase_draw.rectangle((x + 1, y + 1, x + FRAME_SIZE - 2, y + FRAME_SIZE - 2), fill=background)
-                    showcase.alpha_composite(frame, (x, y))
-            row_index += 1
+            if animation == "idle":
+                idle_pose = source_animations["idle"][direction][0]
+                frames = [
+                    make_idle_breath_frame(idle_pose, frame, frame_count)
+                    for frame in range(frame_count)
+                ]
+                if direction == "down_right":
+                    icon_idle_frame = frames[0]
+            elif animation in ("walk", "run"):
+                frames = source_animations[animation][direction]
+            else:
+                idle_pose = source_animations["idle"][direction][0]
+                frames = [
+                    make_action_frame(idle_pose, direction, animation, frame, frame_count)
+                    for frame in range(frame_count)
+                ]
+
+            row = animation_index * len(DIRECTIONS) + direction_index
+            for frame_index, frame in enumerate(frames):
+                sheet.alpha_composite(
+                    frame,
+                    (frame_index * FRAME_SIZE, row * FRAME_SIZE),
+                )
+
+            sample_index = min(showcase_samples[animation], len(frames) - 1)
+            x = direction_index * FRAME_SIZE
+            y = animation_index * FRAME_SIZE
+            background = (236, 228, 211, 255) if (animation_index + direction_index) % 2 == 0 else (226, 216, 198, 255)
+            showcase_draw.rectangle(
+                (x + 1, y + 1, x + FRAME_SIZE - 2, y + FRAME_SIZE - 2),
+                fill=background,
+            )
+            showcase.alpha_composite(frames[sample_index], (x, y))
 
     sheet.save("assets/sprites/player_spritesheet.png", optimize=True)
     showcase.save("assets/sprites/player_8dir_showcase.png", optimize=True)
@@ -618,9 +783,10 @@ def build_explorer_spritesheet() -> None:
     icon_draw = ImageDraw.Draw(icon)
     icon_draw.ellipse((12, 84, 116, 121), fill=(212, 176, 111, 255))
     icon_draw.ellipse((17, 82, 111, 112), fill=(86, 148, 76, 255))
-    icon.alpha_composite(render_smooth_explorer_frame(poses_by_direction["down_right"], "down_right", "idle", 0, ANIMATION_FRAME_COUNT), (16, 12))
+    if icon_idle_frame is not None:
+        icon.alpha_composite(icon_idle_frame, (16, 12))
     icon.save("icon.png", optimize=True)
-    print(f"Saved {sheet.width}x{sheet.height} sprite sheet and 8-direction showcase.")
+    print(f"Saved {sheet.width}x{sheet.height} player sheet with supplied walk/run frames.")
 
 
 def mix_color(first: tuple[int, int, int], second: tuple[int, int, int], amount: float) -> tuple[int, int, int]:

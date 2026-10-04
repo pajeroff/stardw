@@ -44,12 +44,11 @@ const DIRECTION_LABELS_RU: Dictionary = {
 	"down_left": "ЮЗ (Изометрия Вниз-Влево)",
 }
 
-# Animation table matches the sprite sheet (56 rows x 16 columns, 96x96 per frame).
-# Double the frame rate to keep the original cycle lengths while adding smoother motion.
+# Atlas has 16 columns; walk/run use the exact 5/4 frames supplied by the user.
 const ANIM_CONFIG: Dictionary = {
 	"idle":     {"base_row": 0,  "frames": 16, "fps": 14.0, "loop": true},
-	"walk":     {"base_row": 8,  "frames": 16, "fps": 21.0, "loop": true},
-	"run":      {"base_row": 16, "frames": 16, "fps": 28.0, "loop": true},
+	"walk":     {"base_row": 8,  "frames": 5,  "fps": 7.0,  "loop": true},
+	"run":      {"base_row": 16, "frames": 4,  "fps": 8.0,  "loop": true},
 	"axe":      {"base_row": 24, "frames": 16, "fps": 26.0, "loop": false},
 	"pickaxe":  {"base_row": 32, "frames": 16, "fps": 26.0, "loop": false},
 	"water":    {"base_row": 40, "frames": 16, "fps": 24.0, "loop": false},
