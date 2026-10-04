@@ -44,15 +44,16 @@ const DIRECTION_LABELS_RU: Dictionary = {
 	"down_left": "ЮЗ (Изометрия Вниз-Влево)",
 }
 
-# Animation table matching player_spritesheet.png (56 rows x 8 columns, 96x96 per frame)
+# Animation table matches the sprite sheet (56 rows x 16 columns, 96x96 per frame).
+# Double the frame rate to keep the original cycle lengths while adding smoother motion.
 const ANIM_CONFIG: Dictionary = {
-	"idle":     {"base_row": 0,  "frames": 8, "fps": 7.0,  "loop": true},
-	"walk":     {"base_row": 8,  "frames": 8, "fps": 10.5, "loop": true},
-	"run":      {"base_row": 16, "frames": 8, "fps": 14.0, "loop": true},
-	"axe":      {"base_row": 24, "frames": 8, "fps": 13.0, "loop": false},
-	"pickaxe":  {"base_row": 32, "frames": 8, "fps": 13.0, "loop": false},
-	"water":    {"base_row": 40, "frames": 8, "fps": 12.0, "loop": false},
-	"interact": {"base_row": 48, "frames": 8, "fps": 11.0, "loop": false},
+	"idle":     {"base_row": 0,  "frames": 16, "fps": 14.0, "loop": true},
+	"walk":     {"base_row": 8,  "frames": 16, "fps": 21.0, "loop": true},
+	"run":      {"base_row": 16, "frames": 16, "fps": 28.0, "loop": true},
+	"axe":      {"base_row": 24, "frames": 16, "fps": 26.0, "loop": false},
+	"pickaxe":  {"base_row": 32, "frames": 16, "fps": 26.0, "loop": false},
+	"water":    {"base_row": 40, "frames": 16, "fps": 24.0, "loop": false},
+	"interact": {"base_row": 48, "frames": 16, "fps": 22.0, "loop": false},
 }
 
 const TOOLS: Array[Dictionary] = [
